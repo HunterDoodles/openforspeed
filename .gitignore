@@ -1,0 +1,6 @@
+*.zip
+*.exe
+*.bin
+*.7z
+*.log
+.DS_Store
