@@ -536,6 +536,14 @@ discovery() {
     ok "discovery passed"
 }
 
+install_wheel_setup() {
+    local src
+    src="$(dirname "$(readlink -f "$0")")/wheel/nfs-wheel-setup.sh"
+    [[ -f "$src" ]] || return 0
+    cp "$src" "$GAMES_ROOT/nfs-wheel-setup.sh"
+    chmod +x "$GAMES_ROOT/nfs-wheel-setup.sh"
+}
+
 install_proton() {
     [[ -n "$PROTON_BIN" ]] && return 0
     info "Installing $GE_PROTON_VERSION"
@@ -652,6 +660,7 @@ if command -v flatpak >/dev/null 2>&1 \
    && flatpak info io.github.berarma.Oversteer >/dev/null 2>&1 \
    && ls /dev/input/by-id/ 2>/dev/null | grep -qiE "wheel|racing"; then
     flatpak run io.github.berarma.Oversteer -p "\$WHEEL_PROFILE" >/dev/null 2>&1 || true
+    [[ -x "$GAMES_ROOT/nfs-wheel-setup.sh" ]] && "$GAMES_ROOT/nfs-wheel-setup.sh" 20 || true
 fi
 
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT"
@@ -780,6 +789,8 @@ main() {
     [[ ${#SELECTED[@]} -gt 0 ]] || die "Pick something with --game <id> or --all (see --list)"
     discovery
     [[ "$CHECK_ONLY" -eq 1 ]] && exit 0
+    mkdir -p "$GAMES_ROOT"
+    install_wheel_setup
     [[ "$TUNE_ONLY" -eq 1 ]] || install_proton
     local id
     for id in "${SELECTED[@]}"; do install_game "$id"; done
