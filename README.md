@@ -207,11 +207,34 @@ One thing to know about installing it by hand: XtendedInput and ThirteenAG's fix
 
 **Close Steam before you play.** Steam Input takes exclusive control of the gamepad. The game still lists the controller but never gets a button press, so it looks broken when it is not. The launchers warn you if Steam is running. If you want Steam open anyway, turn off Xbox controller support in Steam Settings, Controller.
 
+### Racing wheels work better than gamepads on the old games
+
+If you have a wheel, use it. A Logitech G29 shows up under DirectInput, which is exactly where the two old games look and exactly where an Xbox pad never appears:
+
+```
+Connected (DirectInput devices)
+  Logitech G29 Driving Force Racing Wheel
+
+Connected (XInput devices)
+  Controller (Xbox One For Windows)
+```
+
+That is the whole problem in one screenshot. NFS III and Hot Pursuit 2 are from 1998 and 2002, back when a DirectInput wheel was the normal way to play a racing game, so they see the wheel fine while the modern pad is invisible to them.
+
+Nothing to install on the Wine side. If the kernel sees the wheel, so does the game. Check with:
+
+```bash
+ls /dev/input/by-id/ | grep -i wheel
+lsmod | grep -E "hid_logitech|ff_memless"
+```
+
+`ff_memless` being loaded means force feedback is available. [Oversteer](https://github.com/berarma/oversteer) is worth installing to set the rotation range and centering force, and [new-lg4ff](https://github.com/berarma/new-lg4ff) replaces the kernel driver with one that does force feedback properly under Wine and Proton.
+
 ### The two old ones
 
 NFS III and Hot Pursuit 2 are from 1998 and 2002 and only speak the old DirectInput. Wine hands modern pads to XInput, so these two either see nothing or see something they have no profile for.
 
-Hot Pursuit 2 does see the pad. It just says it does not recognize it and sends you to Controller Options, where you can map the buttons yourself.
+Hot Pursuit 2 does see the pad. It says it does not recognize it and sends you to Controller Options, where you can map the buttons yourself. Do that and it works during races, but the menus stay keyboard only. A wheel does not have this problem.
 
 NFS III sees nothing at all. Map the pad to the keyboard instead:
 
