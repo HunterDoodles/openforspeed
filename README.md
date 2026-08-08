@@ -17,7 +17,7 @@ These games came out between 1998 and 2008. None of them are sold anymore. The c
 | Need for Speed ProStreet | 2007 | crashes | this repack does not start, see below |
 | Need for Speed Undercover | 2008 | plays | set the window mode to 4, then pick your resolution in game |
 | Need for Speed III Hot Pursuit | 1998 | plays | keyboard only, the gamepad needs a mapper |
-| Need for Speed Hot Pursuit 2 | 2002 | runs | set the resolution in a file first, see below |
+| Need for Speed Hot Pursuit 2 | 2002 | plays | force the builtin d3d8, see below |
 
 Plays means somebody actually drove a race with a controller. Runs means it boots and renders but has not had a full session yet. If you get further with any of them, or get ProStreet going, open an issue and say how.
 
@@ -218,13 +218,17 @@ Open AntiMicroX, pick your controller, and bind the sticks and triggers to the a
 
 Two things are specific to this one:
 
-It is a DirectX 8 game and the repack ships a `d3d8.dll` wrapper, so it needs its own override. The launcher sets it:
+It is a DirectX 8 game and the repack ships its own `d3d8.dll` wrapper that translates D3D8 to D3D9. Let that wrapper run and the world renders fine but every car comes out untextured, flat blue and red, with a magenta block over the car select screen. Magenta is the classic missing texture color and that is exactly what it is.
+
+Tell Wine to use its own d3d8 instead and the cars come back with full textures:
 
 ```
-WINEDLLOVERRIDES="d3d8=n,b;dinput8=n,b"
+WINEDLLOVERRIDES="d3d8=b;dinput8=n,b"
 ```
 
-The chain ends up being the game, then the d3d8 wrapper, then d3d9 through DXVK, then Vulkan. Sounds fragile, runs fine.
+Note the `b` on its own, not `n,b`. That means builtin only, so the wrapper file can stay where it is and Wine simply ignores it. This drops you onto wined3d instead of DXVK, which for a 2002 game is not a problem.
+
+Doing this also disables HP2WSFix, since that wrapper was what loaded it. The game still runs at the resolution you set and the picture is not stretched, so you are not losing much.
 
 Its resolution is not in the game menu. Edit this file and set both `[Graphics]` and `[GraphicsFE]`:
 
@@ -237,7 +241,7 @@ Width=3440
 Height=1440
 ```
 
-Like NFS III it loads the old `dinput.dll`, so a gamepad probably needs AntiMicroX too.
+About the gamepad: the game pops up "Your controller is not specifically recognized" and sends you to Controller Options. It does see the pad, it just has no profile for an Xbox controller because the game predates it. Map the buttons yourself in Controller Options, or use AntiMicroX like with NFS III.
 
 ## If something breaks
 

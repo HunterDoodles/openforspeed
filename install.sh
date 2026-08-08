@@ -80,7 +80,7 @@ load_game() {
             GAME_LABEL="Need for Speed Hot Pursuit 2"
             GAME_ZIP_GLOB="Need-for-Speed-Hot-Pursuit-2_*.zip"
             GAME_DIRNAME="Need For Speed - Hot Pursuit 2"; GAME_SIZE_GB=3
-            GAME_KIND="advinst"; GAME_OVERRIDES="d3d8=n,b;dinput8=n,b" ;;
+            GAME_KIND="advinst"; GAME_OVERRIDES="d3d8=b;dinput8=n,b" ;;
         nfs3)
             GAME_LABEL="Need for Speed III Hot Pursuit"
             GAME_ZIP_GLOB="Need-for-Speed-III-Hot-Pursuit_*.zip"
