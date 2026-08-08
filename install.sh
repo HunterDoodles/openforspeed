@@ -23,6 +23,7 @@ PROTON_BIN=""
 CHECK_ONLY=0
 TUNE_ONLY=0
 NO_TUNE=0
+INPUT_MODE="gamepad"
 SELECTED=()
 
 HW_RES_X=1920
@@ -112,6 +113,9 @@ Options:
   --check            Run the system checks and exit.
   --tune-only        Only rewrite the graphics config of installed games.
   --no-tune          Install without touching the graphics config.
+  --input <mode>     gamepad (default) or wheel. XtendedInput gives the best
+                     gamepad handling but disables DirectInput, which is how
+                     racing wheels are seen. Pick wheel to keep them working.
   --help             Show this message.
 
 Example:
@@ -139,6 +143,7 @@ parse_args() {
             --check)  CHECK_ONLY=1; shift ;;
             --tune-only) TUNE_ONLY=1; shift ;;
             --no-tune)   NO_TUNE=1; shift ;;
+            --input)     INPUT_MODE="${2:-gamepad}"; shift 2 ;;
             --help|-h) usage; exit 0 ;;
             *) die "Unknown option: $1 (try --help)" ;;
         esac
@@ -405,9 +410,24 @@ xtendedinput_pack() {
     esac
 }
 
+set_xtendedinput_state() {
+    local dir="$1" want="$2" asi="$dir/scripts/NFS_XtendedInput.asi"
+    if [[ "$want" == "off" ]]; then
+        [[ -f "$asi" ]] && { mv "$asi" "$asi.off"; ok "XtendedInput disabled so the wheel keeps working"; }
+    else
+        [[ -f "$asi.off" ]] && { mv "$asi.off" "$asi"; ok "XtendedInput enabled"; }
+    fi
+    return 0
+}
+
 install_xtendedinput() {
     local id="$1" dir="$2" pack zip
     pack=$(xtendedinput_pack "$id") || return 0
+    if [[ "$INPUT_MODE" == "wheel" ]]; then
+        set_xtendedinput_state "$dir" off
+        return 0
+    fi
+    set_xtendedinput_state "$dir" on
     [[ -f "$dir/scripts/NFS_XtendedInput.asi" ]] && return 0
     [[ -f "$dir/dinput8.dll" ]] || return 0
     mkdir -p "$MODS_DIR"

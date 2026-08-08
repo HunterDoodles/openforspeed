@@ -203,6 +203,30 @@ PassConnStatus = 1                  pause when the pad disconnects
 
 Underground and Underground 2 have no XtendedInput build, so they use ThirteenAG's `ImproveGamepadSupport` instead, which the script also turns on. Works fine, just fewer knobs.
 
+### Gamepad or wheel, you have to pick
+
+XtendedInput says it plainly in its own readme: **"Currently KILLS Direct Input, beware"**. DirectInput is how racing wheels show up, so with XtendedInput installed your wheel disappears from those four games.
+
+So there are two modes:
+
+```bash
+./install.sh --source ~/Downloads --all                  # gamepad, the default
+./install.sh --source ~/Downloads --all --input wheel    # wheel
+```
+
+Switch later without reinstalling anything:
+
+```bash
+./install.sh --tune-only --all --input wheel
+./install.sh --tune-only --all --input gamepad
+```
+
+It just renames the `.asi` file, so flipping back and forth takes a second.
+
+Underground, Underground 2, NFS III and Hot Pursuit 2 are not affected either way. They never get XtendedInput, so a wheel works in all four no matter which mode you pick.
+
+One more thing about Most Wanted: with XtendedInput on, the in-game Controls menu is disabled because it crashes the game. That is the mod doing it on purpose. Use wheel mode if you need that menu.
+
 One thing to know about installing it by hand: XtendedInput and ThirteenAG's fix both ship a `dinput8.dll`, and if you let one overwrite the other you get a game that will not start. They are both the same ASI loader, and it loads every `.asi` in `scripts/`, so keep one `dinput8.dll` and drop both `.asi` files next to each other. That is what the script does.
 
 **Close Steam before you play.** Steam Input takes exclusive control of the gamepad. The game still lists the controller but never gets a button press, so it looks broken when it is not. The launchers warn you if Steam is running. If you want Steam open anyway, turn off Xbox controller support in Steam Settings, Controller.
