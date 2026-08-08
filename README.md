@@ -279,17 +279,24 @@ Unplug the wheel and plug it back in. This is the only command in this whole gui
 
 The script writes an Oversteer profile for each game and the launchers load it before the game starts, so the wheel is set up correctly without you thinking about it. Rotation is narrower on the arcade games and wider on ProStreet, and force feedback is stronger on the older ones where the effects are coarser.
 
-| Game | Rotation | Autocenter | FF gain |
-|---|---|---|---|
-| NFS III | 270 | 55 | 85 |
-| Hot Pursuit 2 | 270 | 50 | 85 |
-| Underground, Underground 2, Most Wanted, Carbon | 270 | 45 | 80 |
-| Undercover | 300 | 45 | 85 |
-| ProStreet | 360 | 40 | 90 |
+| Game | Rotation |
+|---|---|
+| NFS III, Hot Pursuit 2 | 270 |
+| Underground, Underground 2, Most Wanted, Carbon | 270 |
+| Undercover | 300 |
+| ProStreet | 360 |
 
 All of them use `combine_pedals = 1`. Edit any of them in Oversteer and your changes stick, the launchers just load whatever the profile says.
 
-[new-lg4ff](https://github.com/berarma/new-lg4ff) replaces the kernel driver with one that does force feedback properly under Wine and Proton. Worth it if you care about the wheel.
+The profiles also carry autocenter, gain, spring and damper values, but check whether your wheel actually accepts them before you spend time tuning. On a G29 with the stock kernel driver, only three files exist:
+
+```bash
+ls /sys/bus/hid/devices/*046D*/ | grep -E "range|combine|alternate"
+```
+
+That is `range`, `combine_pedals` and `alternate_modes`. The force feedback level settings need [new-lg4ff](https://github.com/berarma/new-lg4ff), which replaces the stock driver. Without it those values are written to the profile, Oversteer accepts them, and nothing happens. Force feedback itself still works, you just cannot tune its strength from here.
+
+Install new-lg4ff if you want that control. The two settings that fix the actual problems, combining the pedals and narrowing the rotation, work fine on the stock driver.
 
 ### The two old ones
 
