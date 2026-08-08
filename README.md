@@ -252,7 +252,44 @@ ls /dev/input/by-id/ | grep -i wheel
 lsmod | grep -E "hid_logitech|ff_memless"
 ```
 
-`ff_memless` being loaded means force feedback is available. [Oversteer](https://github.com/berarma/oversteer) is worth installing to set the rotation range and centering force, and [new-lg4ff](https://github.com/berarma/new-lg4ff) replaces the kernel driver with one that does force feedback properly under Wine and Proton.
+`ff_memless` being loaded means force feedback is available.
+
+### Combine the pedals or the games misbehave
+
+A G29 reports the accelerator, brake and clutch as three separate axes that sit at their maximum value when you are not touching them. Games from this era expect one pedal axis centred at zero, so they read that resting value as full input. What you get is Hot Pursuit 2 flooring it before you touch anything, and ProStreet scrolling down its menu forever until you press the clutch and accidentally move the axis back to the middle.
+
+The fix is one setting:
+
+```bash
+flatpak install flathub io.github.berarma.Oversteer
+flatpak run io.github.berarma.Oversteer --combine-pedals 1 --range 270
+```
+
+Oversteer cannot touch the wheel until you give it permission, and it does not install the udev rule itself:
+
+```bash
+sudo curl -o /etc/udev/rules.d/99-logitech-wheel-perms.rules \
+  https://raw.githubusercontent.com/berarma/oversteer/master/data/udev/99-logitech-wheel-perms.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+Unplug the wheel and plug it back in. This is the only command in this whole guide that needs sudo.
+
+### A profile per game
+
+The script writes an Oversteer profile for each game and the launchers load it before the game starts, so the wheel is set up correctly without you thinking about it. Rotation is narrower on the arcade games and wider on ProStreet, and force feedback is stronger on the older ones where the effects are coarser.
+
+| Game | Rotation | Autocenter | FF gain |
+|---|---|---|---|
+| NFS III | 270 | 55 | 85 |
+| Hot Pursuit 2 | 270 | 50 | 85 |
+| Underground, Underground 2, Most Wanted, Carbon | 270 | 45 | 80 |
+| Undercover | 300 | 45 | 85 |
+| ProStreet | 360 | 40 | 90 |
+
+All of them use `combine_pedals = 1`. Edit any of them in Oversteer and your changes stick, the launchers just load whatever the profile says.
+
+[new-lg4ff](https://github.com/berarma/new-lg4ff) replaces the kernel driver with one that does force feedback properly under Wine and Proton. Worth it if you care about the wheel.
 
 ### The two old ones
 

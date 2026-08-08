@@ -647,6 +647,13 @@ if pgrep -x steam >/dev/null 2>&1 && command -v zenity >/dev/null 2>&1; then
         --ok-label="Start anyway" --cancel-label="Cancel" 2>/dev/null || exit 0
 fi
 
+WHEEL_PROFILE="nfs-$id"
+if command -v flatpak >/dev/null 2>&1 \
+   && flatpak info io.github.berarma.Oversteer >/dev/null 2>&1 \
+   && ls /dev/input/by-id/ 2>/dev/null | grep -qiE "wheel|racing"; then
+    flatpak run io.github.berarma.Oversteer -p "\$WHEEL_PROFILE" >/dev/null 2>&1 || true
+fi
+
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT"
 export STEAM_COMPAT_DATA_PATH="$pfx"
 export WINEDLLOVERRIDES="${overrides:+$overrides;}lsteamclient=d"
@@ -713,6 +720,13 @@ install_game() {
         [[ "$id" == "prostreet" ]] && install_prostreet_fix "$dir"
         install_xtendedinput "$id" "$dir"
         tune_game "$dir"
+        local rexe; rexe=$(detect_exe "$dir")
+        if [[ -n "$rexe" ]]; then
+            local rlauncher ricon
+            rlauncher=$(write_launcher "$id" "$pfx" "$dir" "$rexe" "$GAME_OVERRIDES" "$GAME_LABEL")
+            ricon=$(extract_icon "$dir" "$id")
+            write_desktop_entry "$id" "$GAME_LABEL" "$rlauncher" "$ricon"
+        fi
         ok "$GAME_LABEL retuned"
         return 0
     fi
