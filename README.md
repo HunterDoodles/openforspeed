@@ -4,7 +4,7 @@ Classic Need for Speed games running on Linux, with the widescreen fixes and gra
 
 These games came out between 1998 and 2008. None of them are sold anymore. The community keeps them alive with repacks and mods, and they run really well on Linux once you know the two or three settings that matter. This repo is those settings plus a script that does the boring parts.
 
-![Main menu](screenshots/most-wanted.png)
+![Hot Pursuit 2 running on Linux at 3440x1440](screenshots/hot-pursuit-2.png)
 
 ## What works
 
