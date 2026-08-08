@@ -73,7 +73,7 @@ Put everything in one folder. The script searches recursively, so subfolders are
 ## Install
 
 ```bash
-git clone https://github.com/<your-user>/openforspeed.git
+git clone https://github.com/agentkyo/openforspeed.git
 cd openforspeed
 ./install.sh --list
 ./install.sh --source ~/Downloads --game most-wanted
