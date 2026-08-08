@@ -31,6 +31,9 @@ class AbsInfo(ctypes.Structure):
                 ('maximum', ctypes.c_int32), ('fuzz', ctypes.c_int32),
                 ('flat', ctypes.c_int32), ('resolution', ctypes.c_int32)]
 
+EVIOCGABS = lambda code: 0x80184540 + code
+EVIOCSABS = lambda code: 0x401845c0 + code
+
 CLUTCH_AXIS = 1
 PEDAL_AXES = (2, 5)
 percent = int(sys.argv[1]) / 100.0
@@ -43,22 +46,35 @@ for path in glob.glob('/dev/input/by-id/*event-joystick'):
         fd = os.open(os.path.realpath(path), os.O_RDWR)
     except OSError:
         continue
-    for code in (CLUTCH_AXIS,) + PEDAL_AXES:
+
+    info = AbsInfo()
+    try:
+        fcntl.ioctl(fd, EVIOCGABS(CLUTCH_AXIS), info)
+        span = info.maximum - info.minimum
+        if span > 0:
+            centre = (info.minimum + info.maximum) // 2
+            if abs(info.value - centre) > span * 0.25:
+                info.minimum = info.value - span
+                info.maximum = info.value + span
+                info.flat = int(span * 0.30)
+                fcntl.ioctl(fd, EVIOCSABS(CLUTCH_AXIS), info)
+    except OSError:
+        pass
+
+    for code in PEDAL_AXES:
         info = AbsInfo()
         try:
-            fcntl.ioctl(fd, 0x80184540 + code, info)
+            fcntl.ioctl(fd, EVIOCGABS(code), info)
         except OSError:
             continue
         span = info.maximum - info.minimum
         if span == 0:
             continue
-        if code == CLUTCH_AXIS:
-            info.flat = span
-        else:
-            info.flat = int(span * percent)
+        info.flat = int(span * percent)
         try:
-            fcntl.ioctl(fd, 0x401845c0 + code, info)
+            fcntl.ioctl(fd, EVIOCSABS(code), info)
         except OSError:
             pass
+
     os.close(fd)
 PY
