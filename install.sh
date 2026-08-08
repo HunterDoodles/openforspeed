@@ -11,7 +11,7 @@ readonly STAGING_DIR="$GAMES_ROOT/_installers/nfs"
 readonly ICON_DIR="$HOME/.local/share/icons"
 readonly APPS_DIR="$HOME/.local/share/applications"
 
-readonly GAME_IDS=(underground underground-2 most-wanted carbon prostreet undercover nfs3)
+readonly GAME_IDS=(underground underground-2 most-wanted carbon prostreet undercover nfs3 hot-pursuit-2)
 
 SOURCE_DIR=""
 STEAM_ROOT=""
@@ -76,6 +76,11 @@ load_game() {
             GAME_LABEL="Need for Speed Undercover"
             GAME_ZIP_GLOB="Need-for-Speed-Undercover_*.zip"
             GAME_DIRNAME="NFSUC"; GAME_SIZE_GB=12 ;;
+        hot-pursuit-2)
+            GAME_LABEL="Need for Speed Hot Pursuit 2"
+            GAME_ZIP_GLOB="Need-for-Speed-Hot-Pursuit-2_*.zip"
+            GAME_DIRNAME="Need For Speed - Hot Pursuit 2"; GAME_SIZE_GB=3
+            GAME_KIND="advinst"; GAME_OVERRIDES="d3d8=n,b;dinput8=n,b" ;;
         nfs3)
             GAME_LABEL="Need for Speed III Hot Pursuit"
             GAME_ZIP_GLOB="Need-for-Speed-III-Hot-Pursuit_*.zip"
@@ -117,8 +122,7 @@ list_games() {
         load_game "$id"
         printf '  %-16s %-38s ~%s GB\n' "$id" "$GAME_LABEL" "$GAME_SIZE_GB"
     done
-    printf '\n%s\n' "Hot Pursuit 2 is not here yet. It needs DirectPlay, which Wine does not"
-    printf '%s\n' "provide out of the box. See the README for where that stands."
+    printf '\n%s\n' "Hot Pursuit 2 needs one manual step after install, see the README."
 }
 
 parse_args() {
@@ -624,7 +628,7 @@ install_game() {
     else
         create_prefix "$pfx"
         case "$GAME_KIND" in
-            magipack) install_magipack "$id" "$zip" "$pfx" ;;
+            magipack|advinst) install_magipack "$id" "$zip" "$pfx" ;;
             bundle7z) install_bundle7z "$id" "$zip" "$pfx" ;;
         esac
     fi

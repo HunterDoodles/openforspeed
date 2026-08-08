@@ -17,9 +17,9 @@ These games came out between 1998 and 2008. None of them are sold anymore. The c
 | Need for Speed ProStreet | 2007 | crashes | this repack does not start, see below |
 | Need for Speed Undercover | 2008 | plays | set the window mode to 4, then pick your resolution in game |
 | Need for Speed III Hot Pursuit | 1998 | plays | keyboard only, the gamepad needs a mapper |
-| Need for Speed Hot Pursuit 2 | 2002 | blocked | needs DirectPlay, see below |
+| Need for Speed Hot Pursuit 2 | 2002 | runs | set the resolution in a file first, see below |
 
-Plays means somebody actually drove a race with a controller. Installs means the script sets it up and the game starts, but nobody has sat down with it yet. If you play one of those, open an issue and say how it went.
+Plays means somebody actually drove a race with a controller. Runs means it boots and renders but has not had a full session yet. If you get further with any of them, or get ProStreet going, open an issue and say how.
 
 Tested on this machine:
 
@@ -214,7 +214,30 @@ flatpak install flathub io.github.antimicrox.antimicrox
 
 Open AntiMicroX, pick your controller, and bind the sticks and triggers to the arrow keys plus whatever else you want. NFS III has full keyboard support and its own Controllers menu shows you the current key bindings. Leave AntiMicroX running while you play.
 
-**Hot Pursuit 2** is the one that does not work yet. The repack needs the DirectPlay Windows feature, and Wine does not ship a working DirectPlay. `winetricks directplay` exists but it pulls Windows components that are not legal to redistribute and did not help in a quick test. If you get it running, please open an issue.
+**Hot Pursuit 2** works, and the DirectPlay warning in its readme turned out to be a red herring. Wine ships its own `dplay.dll` and `dplayx.dll`, and if you trace the running game you can see DirectPlay is never even loaded. It is only needed for LAN play.
+
+Two things are specific to this one:
+
+It is a DirectX 8 game and the repack ships a `d3d8.dll` wrapper, so it needs its own override. The launcher sets it:
+
+```
+WINEDLLOVERRIDES="d3d8=n,b;dinput8=n,b"
+```
+
+The chain ends up being the game, then the d3d8 wrapper, then d3d9 through DXVK, then Vulkan. Sounds fragile, runs fine.
+
+Its resolution is not in the game menu. Edit this file and set both `[Graphics]` and `[GraphicsFE]`:
+
+```
+~/Games/nfs-hot-pursuit-2/pfx/drive_c/users/steamuser/Documents/EA Games/Need For Speed Hot Pursuit 2/rendercaps.ini
+```
+
+```ini
+Width=3440
+Height=1440
+```
+
+Like NFS III it loads the old `dinput.dll`, so a gamepad probably needs AntiMicroX too.
 
 ## If something breaks
 
