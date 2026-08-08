@@ -8,6 +8,10 @@ readonly GE_PROTON_URL="https://github.com/GloriousEggroll/proton-ge-custom/rele
 readonly GAMES_ROOT="$HOME/Games"
 readonly RUNNERS_DIR="$GAMES_ROOT/_runners"
 readonly STAGING_DIR="$GAMES_ROOT/_installers/nfs"
+readonly MODS_DIR="$GAMES_ROOT/_installers/nfs/mods"
+readonly XI_VERSION="1.22"
+readonly XI_BASE="https://github.com/xan1242/NFS-XtendedInput/releases/download/${XI_VERSION}"
+readonly WSFP_TAGS="https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases/tags"
 readonly ICON_DIR="$HOME/.local/share/icons"
 readonly APPS_DIR="$HOME/.local/share/applications"
 
@@ -71,7 +75,7 @@ load_game() {
         prostreet)
             GAME_LABEL="Need for Speed ProStreet"
             GAME_ZIP_GLOB="Need-for-Speed-ProStreet_*.zip"
-            GAME_DIRNAME="NFSPS"; GAME_SIZE_GB=8 ;;
+            GAME_DIRNAME="NFSPS"; GAME_SIZE_GB=10; GAME_KIND="isorepack" ;;
         undercover)
             GAME_LABEL="Need for Speed Undercover"
             GAME_ZIP_GLOB="Need-for-Speed-Undercover_*.zip"
@@ -338,7 +342,9 @@ tune_widescreen() {
             ini_set "$f" "ShadowRes" "8192"
             ini_set "$f" "ImproveShadowLOD" "1"
             ini_set "$f" "AutoScaleShadowsRes" "1"
-            ini_set "$f" "ShadowsFix" "1" ;;
+            ini_set "$f" "ShadowsFix" "1"
+            ini_set "$f" "ImproveSceneryLOD" "1"
+            ini_set "$f" "HudAspectRatioConstraint" "Auto" ;;
         medium)
             ini_set "$f" "ShadowsRes" "4096"
             ini_set "$f" "ShadowRes" "4096"
@@ -389,6 +395,55 @@ tune_reflections() {
     esac
 }
 
+xtendedinput_pack() {
+    case "$1" in
+        most-wanted) printf 'MW' ;;
+        carbon)      printf 'Carbon' ;;
+        prostreet)   printf 'ProStreet' ;;
+        undercover)  printf 'UC' ;;
+        *) return 1 ;;
+    esac
+}
+
+install_xtendedinput() {
+    local id="$1" dir="$2" pack zip
+    pack=$(xtendedinput_pack "$id") || return 0
+    [[ -f "$dir/scripts/NFS_XtendedInput.asi" ]] && return 0
+    [[ -f "$dir/dinput8.dll" ]] || return 0
+    mkdir -p "$MODS_DIR"
+    zip="$MODS_DIR/xtendedinput-$pack.zip"
+    if [[ ! -f "$zip" ]]; then
+        curl -sL --fail -o "$zip" "$XI_BASE/Release-$pack-Pack.zip" 2>/dev/null || { warn "could not fetch XtendedInput for $GAME_LABEL"; return 0; }
+    fi
+    unzip -o -q "$zip" -x "dinput8.dll" -d "$dir" 2>/dev/null
+    ok "XtendedInput added, gamepad handling now matches the other games"
+}
+
+install_prostreet_fix() {
+    local dir="$1" url zip="$MODS_DIR/nfsps-fusionfix.zip"
+    [[ -f "$dir/scripts/NFSProStreet.FusionFix.asi" ]] && return 0
+    mkdir -p "$MODS_DIR"
+    if [[ ! -f "$zip" ]]; then
+        url=$(curl -sL "$WSFP_TAGS/nfsps" 2>/dev/null | grep -oE '"browser_download_url": "[^"]*\.zip"' | head -1 | cut -d'"' -f4)
+        [[ -n "$url" ]] || { warn "could not fetch the ProStreet widescreen fix"; return 0; }
+        curl -sL --fail -o "$zip" "$url" 2>/dev/null || return 0
+    fi
+    unzip -o -q "$zip" -d "$dir" 2>/dev/null
+    ok "widescreen fix added"
+}
+
+tune_xtendedinput() {
+    local f="$1"
+    ini_set "$f" "PassConnStatus" "1"
+    ini_set "$f" "XInputOmniMode" "0"
+    ini_set "$f" "PercentLS" "0.24"
+    ini_set "$f" "PercentRS" "0.24"
+    ini_set "$f" "PercentLS_P2" "0.24"
+    ini_set "$f" "PercentRS_P2" "0.24"
+    ini_set "$f" "Percent_Shifting" "0.75"
+    ini_set "$f" "Percent_AnalogStickDigital" "0.50"
+}
+
 tune_nfs3() {
     local f="$1"
     ini_set "$f" "ThrashDriver" "nglide"
@@ -410,9 +465,10 @@ tune_game() {
     local f count=0
     while IFS= read -r f; do
         case "$(basename "$f")" in
-            *WidescreenFix.ini|*GenericFix.ini)  tune_widescreen "$f"; count=$((count+1)) ;;
+            *WidescreenFix.ini|*GenericFix.ini|*FusionFix.ini)  tune_widescreen "$f"; count=$((count+1)) ;;
             *HDReflections.ini)  tune_reflections "$f"; count=$((count+1)) ;;
             nfs3.ini)            tune_nfs3 "$f"; count=$((count+1)) ;;
+            NFS_XtendedInput.ini) tune_xtendedinput "$f"; count=$((count+1)) ;;
         esac
     done < <(find "$dir" -maxdepth 2 -iname "*.ini" 2>/dev/null)
     [[ "$count" -gt 0 ]] && ok "tuned $count config file(s) for ${HW_RES_X}x${HW_RES_Y}, preset $HW_TIER" \
@@ -509,6 +565,25 @@ install_magipack() {
     info "Installing $GAME_LABEL, this takes a few minutes"
     proton_env "$pfx"
     ( cd "$(dirname "$setup")" && python3 "$PROTON_BIN" run "$setup" \
+        /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=C:\\Games\\$GAME_DIRNAME" ) >/dev/null 2>&1 || true
+}
+
+install_isorepack() {
+    local id="$1" zip="$2" pfx="$3"
+    local stage="$STAGING_DIR/$id"
+    info "Unpacking $GAME_LABEL"
+    unpack_zip "$zip" "$stage"
+    local iso
+    iso=$(find "$stage" -maxdepth 2 -iname "*.iso" | head -1)
+    [[ -n "$iso" ]] || die "No iso inside $zip"
+    if [[ ! -f "$stage/iso/setup.exe" ]]; then
+        info "Extracting the disc image"
+        7z x -y -o"$stage/iso" "$iso" >/dev/null 2>&1
+    fi
+    [[ -f "$stage/iso/setup.exe" ]] || die "No setup.exe inside the disc image"
+    info "Installing $GAME_LABEL, this takes a few minutes"
+    proton_env "$pfx"
+    ( cd "$stage/iso" && python3 "$PROTON_BIN" run "$stage/iso/setup.exe" \
         /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=C:\\Games\\$GAME_DIRNAME" ) >/dev/null 2>&1 || true
 }
 
@@ -615,6 +690,8 @@ install_game() {
 
     if [[ "$TUNE_ONLY" -eq 1 ]]; then
         [[ -n "$(ls -A "$dir" 2>/dev/null)" ]] || return 0
+        [[ "$id" == "prostreet" ]] && install_prostreet_fix "$dir"
+        install_xtendedinput "$id" "$dir"
         tune_game "$dir"
         ok "$GAME_LABEL retuned"
         return 0
@@ -629,10 +706,13 @@ install_game() {
         create_prefix "$pfx"
         case "$GAME_KIND" in
             magipack|advinst) install_magipack "$id" "$zip" "$pfx" ;;
+            isorepack) install_isorepack "$id" "$zip" "$pfx" ;;
             bundle7z) install_bundle7z "$id" "$zip" "$pfx" ;;
         esac
     fi
 
+    [[ "$id" == "prostreet" ]] && install_prostreet_fix "$dir"
+    install_xtendedinput "$id" "$dir"
     tune_game "$dir"
 
     local exe; exe=$(detect_exe "$dir")

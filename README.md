@@ -14,7 +14,7 @@ These games came out between 1998 and 2008. None of them are sold anymore. The c
 | Need for Speed Underground 2 | 2004 | plays | widescreen fix, extra options |
 | Need for Speed Most Wanted | 2005 | plays | widescreen, HD reflections, HUD adapter, DSOAL audio |
 | Need for Speed Carbon | 2006 | plays | widescreen, HD reflections, HUD adapter, EA Trax in races |
-| Need for Speed ProStreet | 2007 | crashes | this repack does not start, see below |
+| Need for Speed ProStreet | 2007 | plays | use the ElAmigos repack, not the MagiPack one |
 | Need for Speed Undercover | 2008 | plays | set the window mode to 4, then pick your resolution in game |
 | Need for Speed III Hot Pursuit | 1998 | plays | keyboard only, the gamepad needs a mapper |
 | Need for Speed Hot Pursuit 2 | 2002 | plays | force the builtin d3d8, see below |
@@ -39,17 +39,36 @@ Everything installs inside your home folder. No sudo, so this also works on Bazz
 
 ## Getting the games
 
-The games are abandonware. [myabandonware](https://www.myabandonware.com/search/q/need+for+speed/pla/4) has them.
+All of these came from [myabandonware](https://www.myabandonware.com/search/q/need+for+speed/pla/4). Search for the game, open its page and grab the exact file listed below. The script finds each game by its file name, so download them and leave the names alone.
 
-Pick the **MagiPack** versions when there is a choice. They come with the official patch already applied plus ThirteenAG's fix pack, so you get widescreen, working controllers and better graphics without hunting down mods yourself. The repack notes inside each archive tell you exactly what is bundled.
+| Game | File |
+|---|---|
+| Underground | `Need-for-Speed-Underground_Win_EN_MagiPack.zip` |
+| Underground 2 | `Need-for-Speed-Underground-2_Win_EN_MagiPack.zip` |
+| Most Wanted | `Need-for-Speed-Most-Wanted_Win_EN_MagiPack.zip` |
+| Carbon | `Need-for-Speed-Carbon_Win_EN_MagiPack.zip` |
+| ProStreet | `Need-for-Speed-ProStreet_Win_EN-FR-DE-IT-ES-NL-DA-FI-SV-HU-CS-PL-RU_Repack.zip` |
+| Undercover | `Need-for-Speed-Undercover_Win_EN-FR-DE-IT-ES-NL-SV-DA-FI-PL-RU-CS-HU_Repack.zip` |
+| NFS III Hot Pursuit | `Need-for-Speed-III-Hot-Pursuit_Win_EN-FR-ES-DE-IT_Modern-Bundle.zip` |
+| Hot Pursuit 2 | `Need-for-Speed-Hot-Pursuit-2_Win_EN_LGU-Repack-by-Bladez1992.zip` |
 
-The downloads are big and spread across file hosts with timers. [JDownloader](https://jdownloader.org/) handles that queue while you do something else:
+These are the exact versions everything here was tested against. Other releases of the same game may work, but these are the ones I know work.
+
+### ProStreet is the odd one out
+
+Do not use `Need-for-Speed-ProStreet_Win_EN_MagiPack.zip`. I tried it first because the MagiPack builds are the best choice for every other game, and it crashes on startup every single time with the same page fault. Details are further down.
+
+The ElAmigos repack in the table above starts with no fuss. It ships the plain game with no mods, and the script downloads the widescreen fix for it during install.
+
+### Downloading
+
+These files are large and the hosts have wait timers. [JDownloader](https://jdownloader.org/) queues them up and deals with the timers while you do something else:
 
 ```bash
 flatpak install flathub org.jdownloader.JDownloader
 ```
 
-Keep each game in its own folder and leave the archive names alone. The script finds games by their file names.
+Put everything in one folder. The script searches recursively, so subfolders are fine.
 
 ## Install
 
@@ -116,6 +135,8 @@ It also sets your native resolution, turns on gamepad button icons if it finds a
 
 Every comment in the ini files is left alone, so you can open them and tweak anything by hand afterwards. ThirteenAG documented each option right there in the file.
 
+On top of the presets it also turns on everything that costs nothing and just makes the game better: shadow fixes, higher detail reflections, HUD scaling for ultrawide, uncapped frame rate on the games that support it, the crash guards ThirteenAG ships, and skipping the intro videos.
+
 Redo the tuning any time, for example after changing monitors or GPUs:
 
 ```bash
@@ -168,9 +189,39 @@ You should see the `.asi` files listed. If that comes back empty, your override 
 
 ## Controller
 
-**Close Steam before you play.** Steam Input takes exclusive control of the gamepad. The game still lists the controller but never gets a button press, so it looks broken when it is not. The launchers warn you if Steam is running.
+Undercover shipped with the best gamepad handling of the bunch, so the script gives that same setup to the others.
 
-If you want Steam open anyway, turn off Xbox controller support in Steam Settings, Controller.
+It comes from [NFS-XtendedInput](https://github.com/xan1242/NFS-XtendedInput) by xan1242, which replaces the old input code with proper XInput. You get correct button icons, working analog sticks and triggers, and the game pauses when you unplug the pad, like on console. The script downloads it and installs it for Most Wanted, Carbon, ProStreet and Undercover, then sets the same deadzones everywhere:
+
+```ini
+PercentLS = 0.24                    left stick
+PercentRS = 0.24                    right stick
+Percent_Shifting = 0.75             how far a trigger goes before it counts
+Percent_AnalogStickDigital = 0.50   stick as a d-pad
+PassConnStatus = 1                  pause when the pad disconnects
+```
+
+Underground and Underground 2 have no XtendedInput build, so they use ThirteenAG's `ImproveGamepadSupport` instead, which the script also turns on. Works fine, just fewer knobs.
+
+One thing to know about installing it by hand: XtendedInput and ThirteenAG's fix both ship a `dinput8.dll`, and if you let one overwrite the other you get a game that will not start. They are both the same ASI loader, and it loads every `.asi` in `scripts/`, so keep one `dinput8.dll` and drop both `.asi` files next to each other. That is what the script does.
+
+**Close Steam before you play.** Steam Input takes exclusive control of the gamepad. The game still lists the controller but never gets a button press, so it looks broken when it is not. The launchers warn you if Steam is running. If you want Steam open anyway, turn off Xbox controller support in Steam Settings, Controller.
+
+### The two old ones
+
+NFS III and Hot Pursuit 2 are from 1998 and 2002 and only speak the old DirectInput. Wine hands modern pads to XInput, so these two either see nothing or see something they have no profile for.
+
+Hot Pursuit 2 does see the pad. It just says it does not recognize it and sends you to Controller Options, where you can map the buttons yourself.
+
+NFS III sees nothing at all. Map the pad to the keyboard instead:
+
+```bash
+flatpak install flathub io.github.antimicrox.antimicrox
+```
+
+Bind the sticks and triggers to the arrow keys, leave it running, and play. The game's own Controllers menu shows you which keys do what.
+
+Do not try turning off SDL in `winebus` to force DirectInput. I tested it and it makes things worse. Xbox pads use the `xpad` kernel driver, which gives you evdev nodes and no hidraw node, so with SDL off Wine loses the controller completely.
 
 ## Per game notes
 
@@ -182,7 +233,7 @@ If you want Steam open anyway, turn off Xbox controller support in Steam Setting
 
 **Undercover** opens in a tiny window because the repack ships `WindowedMode = 1`. Set it to `4` in `scripts/NFSUndercover.GenericFix.ini` for borderless fullscreen, which the script now does for you. After that, open the video options in game and pick your resolution. The game boots at 1920x1080 and on a multi monitor setup it will land on whichever screen matches, not necessarily your main one.
 
-**ProStreet** does not run with this repack. It crashes on startup every time, always at the same address:
+**ProStreet** works, but only with the ElAmigos repack. The MagiPack one crashes on startup every time, always at the same address:
 
 ```
 Unhandled page fault on write access to 0x00007077 at address 0x01F6880E, wow64 32-bit code
