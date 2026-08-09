@@ -413,26 +413,74 @@ Rotation range, force feedback and combined pedals still belong to Oversteer. Th
 
 ### Picking your device when a game starts
 
-The launchers open a small menu first:
+The launchers open a menu before the game:
 
 ```
-OpenForSpeed  prostreet
-----------------------------------------------
- 1  Wheel    Logitech G29 Driving Force Racing
- 2  Gamepad  not connected
- 3  Keyboard no device setup
+  OpenForSpeed   prostreet
+  ==========================================================
 
- c  Calibrate the wheel first
- f  Forget the saved choice for this game
+   1  Wheel     Logitech G29 Driving Force Rac   calibrated (6 axes, 1 dropped)
+   2  Gamepad   Xbox One For Windows             not calibrated yet
+   3  Keyboard                                   no setup needed
 
-saved choice: wheel, starting in 5s
+  c calibrate    d delete a profile    f forget saved choice
+  q quit
+
+  starting with wheel in 5s  [#####...]
+  press any listed key to stop the countdown
 ```
 
-It remembers your pick per game, so after the first time it counts down and starts on its own. Press a number to change it, `c` to calibrate, `f` to forget. If an axis rests away from centre it says so right there, since that is the thing that makes menus scroll by themselves.
+Each option tells you whether a profile exists and what is in it, so you know
+what you are about to play with. If an axis rests away from centre it warns you
+right there, because that is what makes menus scroll on their own.
 
-Pick the wheel and it sets up the hardware, starts the bridge, launches the game, and shuts the bridge down when you quit.
+The countdown only runs when you already picked something for that game before.
+Any key stops it. Pick an option with no profile yet and it calibrates first
+instead of starting something half configured.
 
-The menu opens in your terminal emulator. If you have none installed, or if you launch from a terminal already, it uses that instead. Games launched with no menu at all still work, the launcher falls through to starting the game directly.
+Wheel and gamepad keep separate profiles, so you can set up both and switch per
+game. `c` calibrates either one, `d` deletes either one, `f` clears the saved
+choice for this game.
+
+## How each game stores its bindings
+
+Worth knowing before you spend an evening trying to edit the wrong file.
+
+**Hot Pursuit 2** is the only one that is fully open. `Controllers/definitions.ini`
+describes each device, including where every axis rests:
+
+```ini
+axis0 = 0,left,127,0,kTxtAxis0Left
+```
+
+That is axis 0, direction left, resting at 127, extreme at 0. Getting that
+resting value right is exactly what stops a pedal from reading as held down.
+`Controllers/defaults.ini` then maps actions to inputs:
+
+```ini
+InputGas       = key SC_UP
+InputShiftUp   = key SC_A
+```
+
+**Most Wanted, Carbon, ProStreet and Undercover** can be remapped through
+XtendedInput, which writes plain text to
+`scripts/XtendedInputMaps/<profile>/NFS_XtendedInput.usermap.ini`:
+
+```ini
+FRONTENDACTION_ACCEPT = XINPUT_GAMEPAD_A
+GAMEACTION_GAS        = XINPUT_GAMEPAD_RT
+```
+
+Menu actions and driving actions are separate, which is handy. The catch is that
+XtendedInput only speaks XInput and switches DirectInput off, so this route is
+for gamepads. Wheels need it disabled.
+
+**Underground, Underground 2 and NFS III** keep their bindings inside binary
+save files. There is no text file to edit and no safe way to write them from
+outside, so those are mapped in game and left alone.
+
+This is why the tool works on the device instead of the game files. Shaping what
+the game receives is the only approach that works the same way everywhere.
 
 ## If something breaks
 

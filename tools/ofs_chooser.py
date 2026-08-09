@@ -3,10 +3,13 @@
 
 import json
 import os
+import select
 import shutil
 import subprocess
 import sys
+import termios
 import time
+import tty
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_DIR = os.path.expanduser('~/.config/openforspeed')
@@ -16,17 +19,20 @@ sys.path.insert(0, HERE)
 import ofs_input as ofs
 
 TERMINALS = [
-    ('ghostty', ['-e']),
-    ('gnome-terminal', ['--']),
-    ('konsole', ['-e']),
-    ('xfce4-terminal', ['-x']),
-    ('alacritty', ['-e']),
-    ('kitty', []),
-    ('xterm', ['-e']),
+    ('ghostty', ['-e']), ('gnome-terminal', ['--']), ('konsole', ['-e']),
+    ('xfce4-terminal', ['-x']), ('alacritty', ['-e']), ('kitty', []),
+    ('foot', []), ('xterm', ['-e']),
 ]
 
-BOLD, DIM, GREEN, YELLOW, RESET = (
-    '\033[1m', '\033[2m', '\033[32m', '\033[33m', '\033[0m')
+BOLD = '\033[1m'
+DIM = '\033[2m'
+GREEN = '\033[32m'
+YELLOW = '\033[33m'
+CYAN = '\033[36m'
+RED = '\033[31m'
+RESET = '\033[0m'
+
+COUNTDOWN = 8
 
 
 def load_choices():
@@ -47,7 +53,8 @@ def save_choice(game, mode):
 
 def forget_choice(game):
     data = load_choices()
-    data.pop(game, None)
+    if data.pop(game, None) is None:
+        return
     with open(CHOICE_FILE, 'w') as handle:
         json.dump(data, handle, indent=2)
 
@@ -67,10 +74,26 @@ def detect_devices():
     return wheel, pad
 
 
-def axis_warnings(dev):
+def profile_summary(name):
+    profile = ofs.load_profile(name)
+    if not profile:
+        return None
+    axes = profile.get('axes', {})
+    kept = [a for a in axes.values() if a.get('enabled')]
+    dropped = len(axes) - len(kept)
+    inverted = sum(1 for a in kept if a.get('invert'))
+    parts = ['%d axes' % len(kept)]
+    if dropped:
+        parts.append('%d dropped' % dropped)
+    if inverted:
+        parts.append('%d inverted' % inverted)
+    return ', '.join(parts)
+
+
+def off_centre_axes(dev):
     if not dev:
         return []
-    warnings = []
+    out = []
     fd = os.open(dev['path'], os.O_RDONLY | os.O_NONBLOCK)
     for code in dev['axes']:
         info = ofs.read_axis(fd, code)
@@ -79,44 +102,57 @@ def axis_warnings(dev):
         span = info.maximum - info.minimum
         centre = (info.minimum + info.maximum) / 2
         if abs(info.value - centre) / span > 0.4:
-            warnings.append(ofs.AXIS_NAMES.get(code, str(code)))
+            out.append(ofs.AXIS_NAMES.get(code, str(code)))
     os.close(fd)
-    return warnings
+    return out
 
 
-def draw_menu(game, wheel, pad, remembered):
-    os.system('clear')
-    print()
-    print('  %sOpenForSpeed%s  %s%s%s' % (BOLD, RESET, DIM, game, RESET))
-    print('  ' + '-' * 46)
-    print()
-    if wheel:
-        warn = axis_warnings(wheel)
-        note = ''
-        if warn:
-            note = '  %s%d axis rests off centre%s' % (YELLOW, len(warn), RESET)
-        print('   1  Wheel    %s%s' % (wheel['name'][:34], note))
+def option_line(key, label, dev, profile_name, warnings):
+    if not dev and profile_name:
+        return '   %s  %-9s %snot connected%s' % (key, label, DIM, RESET)
+    name = dev['name'][:30] if dev else ''
+    summary = profile_summary(profile_name) if profile_name else None
+    if summary:
+        status = '%scalibrated%s %s(%s)%s' % (GREEN, RESET, DIM, summary, RESET)
+    elif profile_name:
+        status = '%snot calibrated yet%s' % (YELLOW, RESET)
     else:
-        print('   1  Wheel    %snot connected%s' % (DIM, RESET))
-    if pad:
-        print('   2  Gamepad  %s' % pad['name'][:34])
+        status = '%sno setup needed%s' % (DIM, RESET)
+    line = '   %s  %-9s %-32s %s' % (key, label, name, status)
+    if warnings:
+        line += '\n        %s%s rests off centre, it will hold menus%s' % (
+            YELLOW, ', '.join(warnings), RESET)
+    return line
+
+
+def draw(game, wheel, pad, remembered, seconds_left, message):
+    sys.stdout.write('\033[H\033[J')
+    print()
+    print('  %sOpenForSpeed%s   %s%s%s' % (BOLD, RESET, CYAN, game, RESET))
+    print('  ' + '=' * 58)
+    print()
+    print(option_line('1', 'Wheel', wheel, 'wheel', off_centre_axes(wheel)))
+    print(option_line('2', 'Gamepad', pad, 'gamepad', []))
+    print(option_line('3', 'Keyboard', None, None, []))
+    print()
+    print('  %sc%s calibrate    %sd%s delete a profile    %sf%s forget saved choice'
+          % (BOLD, RESET, BOLD, RESET, BOLD, RESET))
+    print('  %sq%s quit' % (BOLD, RESET))
+    print()
+    if message:
+        print('  %s' % message)
+        print()
+    if remembered and seconds_left is not None:
+        bar = '#' * seconds_left + '.' * (COUNTDOWN - seconds_left)
+        print('  starting with %s%s%s in %s%d%ss  [%s]'
+              % (BOLD, remembered, RESET, BOLD, seconds_left, RESET, bar))
+        print('  %spress any listed key to stop the countdown%s' % (DIM, RESET))
     else:
-        print('   2  Gamepad  %snot connected%s' % (DIM, RESET))
-    print('   3  Keyboard %sno device setup%s' % (DIM, RESET))
-    print()
-    print('   c  Calibrate the wheel first')
-    print('   f  Forget the saved choice for this game')
-    print()
-    if remembered:
-        print('  %ssaved choice: %s, starting in 5s%s' % (DIM, remembered, RESET))
-        print('  %spress a number to change it%s' % (DIM, RESET))
-    print()
+        print('  %spick an option%s' % (DIM, RESET))
+    sys.stdout.flush()
 
 
 def read_key(timeout=None):
-    import select
-    import termios
-    import tty
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
@@ -129,57 +165,104 @@ def read_key(timeout=None):
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def run_calibration(kind):
+    subprocess.call([sys.executable, os.path.join(HERE, 'ofs_input.py'),
+                     'calibrate', '--device', kind, '--profile', kind])
+
+
+def delete_profile(kind):
+    path = ofs.profile_path(kind)
+    try:
+        os.remove(path)
+        return '%sdeleted the %s profile%s' % (GREEN, kind, RESET)
+    except OSError:
+        return '%sno %s profile to delete%s' % (YELLOW, kind, RESET)
+
+
+def ask_kind(prompt):
+    print()
+    print('  %s  [1] wheel  [2] gamepad  [any other key to cancel]' % prompt)
+    sys.stdout.flush()
+    key = read_key(15)
+    return {'1': 'wheel', '2': 'gamepad'}.get(key)
+
+
 def choose(game):
     wheel, pad = detect_devices()
-    choices = load_choices()
-    remembered = choices.get(game)
+    remembered = load_choices().get(game)
+    if remembered == 'wheel' and not wheel:
+        remembered = None
+    if remembered == 'gamepad' and not pad:
+        remembered = None
+    message = ''
+    seconds = COUNTDOWN if remembered else None
+
     while True:
-        draw_menu(game, wheel, pad, remembered)
-        key = read_key(5 if remembered else None)
-        if key is None and remembered:
-            return remembered
+        draw(game, wheel, pad, remembered, seconds, message)
+        message = ''
+        key = read_key(1 if seconds is not None else None)
+
+        if key is None:
+            if seconds is None:
+                continue
+            seconds -= 1
+            if seconds <= 0:
+                return remembered
+            continue
+
+        seconds = None
         if key in ('1', '2', '3'):
             mode = {'1': 'wheel', '2': 'gamepad', '3': 'keyboard'}[key]
             if mode == 'wheel' and not wheel:
+                message = '%sno wheel connected%s' % (YELLOW, RESET)
                 continue
             if mode == 'gamepad' and not pad:
+                message = '%sno gamepad connected%s' % (YELLOW, RESET)
                 continue
+            if mode != 'keyboard' and not ofs.load_profile(mode):
+                print()
+                print('  %s has no profile yet, calibrating first' % mode)
+                time.sleep(1.2)
+                run_calibration(mode)
             save_choice(game, mode)
             return mode
         if key == 'c':
-            if wheel:
-                subprocess.call([sys.executable,
-                                 os.path.join(HERE, 'ofs_input.py'),
-                                 'calibrate', '--profile', 'wheel'])
-            remembered = None
-        if key == 'f':
+            kind = ask_kind('calibrate which device?')
+            if kind:
+                run_calibration(kind)
+                message = '%s%s profile saved%s' % (GREEN, kind, RESET)
+        elif key == 'd':
+            kind = ask_kind('delete which profile?')
+            if kind:
+                message = delete_profile(kind)
+        elif key == 'f':
             forget_choice(game)
             remembered = None
-        if key in ('q', '\x03'):
+            message = '%ssaved choice cleared%s' % (GREEN, RESET)
+        elif key in ('q', '\x03'):
             return None
 
 
 def start_bridge(profile='wheel'):
     if not os.access('/dev/uinput', os.W_OK):
-        print('  %s/dev/uinput not writable, skipping the bridge%s' % (YELLOW, RESET))
+        print('  %s/dev/uinput is not writable, running without the bridge%s'
+              % (YELLOW, RESET))
         return None
-    if not ofs.load_profile(profile):
-        dev = ofs.pick_device('wheel')
-        if dev:
-            ofs.save_profile(profile, ofs.default_profile(dev))
     proc = subprocess.Popen(
         [sys.executable, os.path.join(HERE, 'ofs_input.py'),
          'bridge', '--profile', profile],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.5)
     if proc.poll() is not None:
+        print('  %sthe bridge did not start, using the wheel directly%s'
+              % (YELLOW, RESET))
         return None
     return proc
 
 
 def main():
     if len(sys.argv) < 3:
-        print('usage: ofs_chooser.py <game-id> <launcher> [args...]')
+        print('usage: ofs_chooser.py <game-id> <command> [args...]')
         return 2
     game = sys.argv[1]
     command = sys.argv[2:]
@@ -187,7 +270,8 @@ def main():
     if not sys.stdin.isatty():
         term = find_terminal()
         if term:
-            os.execvp(term[0], term + [sys.executable, os.path.abspath(__file__)] + sys.argv[1:])
+            os.execvp(term[0], term + [sys.executable,
+                                       os.path.abspath(__file__)] + sys.argv[1:])
         os.execvp(command[0], command)
 
     mode = choose(game)
@@ -196,13 +280,13 @@ def main():
 
     bridge = None
     if mode == 'wheel':
-        wheel_setup = os.path.expanduser('~/Games/nfs-wheel-setup.sh')
-        if os.access(wheel_setup, os.X_OK):
-            subprocess.call([wheel_setup, '20'])
+        setup = os.path.expanduser('~/Games/nfs-wheel-setup.sh')
+        if os.access(setup, os.X_OK):
+            subprocess.call([setup, '20'])
         bridge = start_bridge()
 
     print()
-    print('  %sstarting with %s%s' % (GREEN, mode, RESET))
+    print('  %sstarting %s with %s%s' % (GREEN, game, mode, RESET))
     print()
     try:
         subprocess.call(command)
