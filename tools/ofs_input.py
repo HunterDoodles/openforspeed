@@ -16,15 +16,32 @@ CONFIG_DIR = os.path.expanduser('~/.config/openforspeed')
 PROFILE_DIR = os.path.join(CONFIG_DIR, 'input')
 
 EV_SYN, EV_KEY, EV_ABS = 0x00, 0x01, 0x03
+EV_FF = 0x15
+EV_UINPUT = 0x0101
 SYN_REPORT = 0
 BUS_USB = 0x03
+
+FF_NAMES = {0x50: 'rumble', 0x51: 'periodic', 0x52: 'constant',
+            0x53: 'spring', 0x54: 'friction', 0x55: 'damper',
+            0x56: 'inertia', 0x57: 'ramp'}
+
+UI_FF_UPLOAD = 1
+UI_FF_ERASE = 2
+FF_EFFECT_SIZE = 48
 
 EVIOCGRAB = 0x40044590
 UI_SET_EVBIT = 0x40045564
 UI_SET_KEYBIT = 0x40045565
 UI_SET_ABSBIT = 0x40045567
+UI_SET_FFBIT = 0x4004556b
 UI_DEV_CREATE = 0x5501
 UI_DEV_DESTROY = 0x5502
+UI_BEGIN_FF_UPLOAD = 0xc06855c8
+UI_END_FF_UPLOAD = 0x406855c9
+UI_BEGIN_FF_ERASE = 0xc00c55ca
+UI_END_FF_ERASE = 0x400c55cb
+EVIOCSFF = 0x40304580
+EVIOCRMFF = 0x40044581
 
 EVENT_FORMAT = 'llHHi'
 EVENT_SIZE = struct.calcsize(EVENT_FORMAT)
@@ -47,6 +64,53 @@ class AbsInfo(ctypes.Structure):
     _fields_ = [('value', ctypes.c_int32), ('minimum', ctypes.c_int32),
                 ('maximum', ctypes.c_int32), ('fuzz', ctypes.c_int32),
                 ('flat', ctypes.c_int32), ('resolution', ctypes.c_int32)]
+
+
+class FFEffect(ctypes.Structure):
+    _fields_ = [('raw', ctypes.c_ubyte * FF_EFFECT_SIZE)]
+
+    @property
+    def effect_id(self):
+        return struct.unpack_from('h', bytes(self.raw), 2)[0]
+
+    def set_id(self, value):
+        data = bytearray(bytes(self.raw))
+        struct.pack_into('h', data, 2, value)
+        ctypes.memmove(self.raw, bytes(data), FF_EFFECT_SIZE)
+
+    @property
+    def effect_type(self):
+        return struct.unpack_from('H', bytes(self.raw), 0)[0]
+
+    def scale_strength(self, gain):
+        if gain == 1.0:
+            return
+        data = bytearray(bytes(self.raw))
+        kind = struct.unpack_from('H', data, 0)[0]
+        offsets = []
+        if kind == 0x52:
+            offsets = [16]
+        elif kind == 0x51:
+            offsets = [20]
+        elif kind == 0x57:
+            offsets = [16, 18]
+        elif kind == 0x50:
+            offsets = []
+        for off in offsets:
+            level = struct.unpack_from('h', data, off)[0]
+            level = int(max(-32767, min(32767, level * gain)))
+            struct.pack_into('h', data, off, level)
+        ctypes.memmove(self.raw, bytes(data), FF_EFFECT_SIZE)
+
+
+class UinputFFUpload(ctypes.Structure):
+    _fields_ = [('request_id', ctypes.c_uint32), ('retval', ctypes.c_int32),
+                ('effect', FFEffect), ('old', FFEffect)]
+
+
+class UinputFFErase(ctypes.Structure):
+    _fields_ = [('request_id', ctypes.c_uint32), ('retval', ctypes.c_int32),
+                ('effect_id', ctypes.c_uint32)]
 
 
 class UinputUserDev(ctypes.Structure):
@@ -162,7 +226,7 @@ def default_profile(dev):
         }
     os.close(fd)
     return {'device': dev['name'], 'axes': axes,
-            'buttons': dev['buttons'], 'bindings': {}}
+            'buttons': dev['buttons'], 'bindings': {}, 'ff_gain': 1.0}
 
 
 def profile_path(name):
@@ -292,8 +356,10 @@ def capture_button(dev, prompt, timeout=10):
 
 
 class VirtualDevice:
-    def __init__(self, name, axes, buttons):
-        self.fd = os.open('/dev/uinput', os.O_WRONLY | os.O_NONBLOCK)
+    def __init__(self, name, axes, buttons, ff_effects=(), ff_max=0):
+        flags = os.O_RDWR if ff_effects else os.O_WRONLY
+        self.fd = os.open('/dev/uinput', flags | os.O_NONBLOCK)
+        self.ff_effects = list(ff_effects)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_ABS)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
@@ -301,12 +367,17 @@ class VirtualDevice:
             fcntl.ioctl(self.fd, UI_SET_KEYBIT, code)
         for code in axes:
             fcntl.ioctl(self.fd, UI_SET_ABSBIT, code)
+        if self.ff_effects:
+            fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_FF)
+            for code in self.ff_effects:
+                fcntl.ioctl(self.fd, UI_SET_FFBIT, code)
         setup = UinputUserDev()
         setup.name = name.encode()[:79]
         setup.bustype = BUS_USB
         setup.vendor = 0x046d
         setup.product = 0xc24f
         setup.version = 1
+        setup.ff_effects_max = ff_max
         for code in axes:
             setup.absmin[code] = -32767
             setup.absmax[code] = 32767
@@ -333,14 +404,75 @@ class VirtualDevice:
         os.close(self.fd)
 
 
+def real_device_ff(path):
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    except OSError:
+        return []
+    codes = supported_codes(fd, EV_FF, 0x80)
+    os.close(fd)
+    return [c for c in codes if c in FF_NAMES]
+
+
+def handle_ff_request(virtual, real_fd, event_code, id_map, gain=1.0):
+    if event_code == UI_FF_UPLOAD:
+        request = UinputFFUpload()
+        request.request_id = 0
+        try:
+            fcntl.ioctl(virtual.fd, UI_BEGIN_FF_UPLOAD, request)
+        except OSError:
+            return
+        virtual_id = request.effect.effect_id
+        forwarded = FFEffect()
+        ctypes.memmove(forwarded.raw, request.effect.raw, FF_EFFECT_SIZE)
+        forwarded.scale_strength(gain)
+        forwarded.set_id(id_map.get(virtual_id, -1))
+        try:
+            fcntl.ioctl(real_fd, EVIOCSFF, forwarded)
+            id_map[virtual_id] = forwarded.effect_id
+            request.retval = 0
+        except OSError:
+            request.retval = -1
+        try:
+            fcntl.ioctl(virtual.fd, UI_END_FF_UPLOAD, request)
+        except OSError:
+            pass
+    elif event_code == UI_FF_ERASE:
+        request = UinputFFErase()
+        try:
+            fcntl.ioctl(virtual.fd, UI_BEGIN_FF_ERASE, request)
+        except OSError:
+            return
+        real_id = id_map.pop(request.effect_id, None)
+        request.retval = 0
+        if real_id is not None:
+            try:
+                fcntl.ioctl(real_fd, EVIOCRMFF, real_id)
+            except OSError:
+                request.retval = -1
+        try:
+            fcntl.ioctl(virtual.fd, UI_END_FF_ERASE, request)
+        except OSError:
+            pass
+
+
 def run_bridge(dev, profile, grab=True):
     enabled = {int(c): a for c, a in profile['axes'].items() if a['enabled']}
     if not enabled:
         print('no axes enabled in this profile')
         return
+    ff_codes = real_device_ff(dev['path'])
     virtual = VirtualDevice('OpenForSpeed %s' % profile.get('device', 'Wheel'),
-                            list(enabled.keys()), profile['buttons'])
-    src = os.open(dev['path'], os.O_RDONLY)
+                            list(enabled.keys()), profile['buttons'],
+                            ff_effects=ff_codes, ff_max=16 if ff_codes else 0)
+    if ff_codes:
+        print('force feedback forwarded: %s'
+              % ', '.join(FF_NAMES[c] for c in ff_codes))
+    try:
+        src = os.open(dev['path'], os.O_RDWR if ff_codes else os.O_RDONLY)
+    except OSError:
+        src = os.open(dev['path'], os.O_RDONLY)
+        ff_codes = []
     if grab:
         try:
             fcntl.ioctl(src, EVIOCGRAB, 1)
@@ -348,10 +480,31 @@ def run_bridge(dev, profile, grab=True):
             print('could not grab the real device, both will be visible')
     print('bridge running, the game should use "OpenForSpeed ..."')
     print('press ctrl-c to stop')
+    id_map = {}
+    ff_gain = float(profile.get('ff_gain', 1.0))
+    if ff_codes and ff_gain != 1.0:
+        print('force feedback strength: %d%%' % int(ff_gain * 100))
+    watch = [src, virtual.fd] if ff_codes else [src]
     try:
         while True:
-            ready, _, _ = select.select([src], [], [], 0.5)
-            if not ready:
+            ready, _, _ = select.select(watch, [], [], 0.5)
+            if virtual.fd in ready:
+                try:
+                    blob = os.read(virtual.fd, EVENT_SIZE * 16)
+                except (BlockingIOError, OSError):
+                    blob = b''
+                for i in range(0, len(blob) - EVENT_SIZE + 1, EVENT_SIZE):
+                    _s, _u, etype, code, value = struct.unpack(
+                        EVENT_FORMAT, blob[i:i + EVENT_SIZE])
+                    if etype == EV_UINPUT:
+                        handle_ff_request(virtual, src, code, id_map, ff_gain)
+                    elif etype == EV_FF:
+                        real_id = id_map.get(code, code)
+                        now = time.time()
+                        os.write(src, struct.pack(
+                            EVENT_FORMAT, int(now), int(now % 1 * 1e6),
+                            EV_FF, real_id, value))
+            if src not in ready:
                 continue
             data = os.read(src, EVENT_SIZE * 64)
             dirty = False
@@ -423,6 +576,12 @@ def cmd_calibrate(args):
         ans = input('  deadzone percent [%d] ' % int(axis['deadzone'] * 100)).strip()
         if ans.isdigit():
             axis['deadzone'] = min(90, int(ans)) / 100.0
+    current = int(float(profile.get('ff_gain', 1.0)) * 100)
+    print('force feedback strength')
+    print('  100 keeps what the game asks for, lower is softer, higher is stronger')
+    ans = input('  strength percent [%d] ' % current).strip()
+    if ans.isdigit():
+        profile['ff_gain'] = max(0, min(200, int(ans))) / 100.0
     save_profile(args.profile, profile)
     print('\nsaved to %s' % profile_path(args.profile))
     return 0

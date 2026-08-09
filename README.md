@@ -402,6 +402,15 @@ python3 tools/ofs_input.py bridge --profile wheel
 
 What this buys you:
 
+- **Force feedback still works.** The bridge declares the same effects the real
+  wheel supports and forwards them through, translating effect ids in both
+  directions. Without this the game shows force feedback as unavailable, since a
+  virtual device that only sends axes and buttons cannot receive effects.
+- **Force feedback strength you can set.** The stock `hid-logitech` driver has no
+  gain control, so Oversteer cannot change it. The bridge scales the effect
+  magnitude on its way through instead, which works on any driver. Set it during
+  calibration, 100 keeps what the game asks for.
+
 - **Drop an axis entirely.** The clutch never reaches the game, so it cannot hold a menu direction.
 - **Deadzones that work.** They are applied before the event is sent, so the game receives a value that is already clean instead of being asked to respect a hint.
 - **Inversion per axis**, for pedals wired the wrong way round.
