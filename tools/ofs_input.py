@@ -214,15 +214,19 @@ def default_profile(dev):
         centre = (info.minimum + info.maximum) / 2
         offset = abs(info.value - centre) / span
         name = AXIS_NAMES.get(code, 'AXIS%d' % code)
+        role = ROLE_HINTS.get(name, 'other')
+        rest = info.value
+        if role in ('steering', 'dpad'):
+            rest = (info.minimum + info.maximum) // 2
         axes[str(code)] = {
             'name': name,
-            'role': ROLE_HINTS.get(name, 'other'),
+            'role': role,
             'min': info.minimum,
             'max': info.maximum,
-            'rest': info.value,
-            'deadzone': 0.10 if name == 'X' else 0.0,
+            'rest': rest,
+            'deadzone': 0.02 if role == 'steering' else 0.0,
             'invert': False,
-            'enabled': not (offset > 0.4 and ROLE_HINTS.get(name) == 'pedal'),
+            'enabled': not (offset > 0.4 and role == 'pedal'),
         }
     os.close(fd)
     return {'device': dev['name'], 'axes': axes,
@@ -456,7 +460,27 @@ def handle_ff_request(virtual, real_fd, event_code, id_map, gain=1.0):
             pass
 
 
+LOCK_PATH = os.path.join(CONFIG_DIR, 'bridge.lock')
+
+
+def acquire_lock():
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    handle = open(LOCK_PATH, 'w')
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    handle.write(str(os.getpid()))
+    handle.flush()
+    return handle
+
+
 def run_bridge(dev, profile, grab=True):
+    lock = acquire_lock()
+    if lock is None:
+        print('a bridge is already running, leaving it alone')
+        return
     enabled = {int(c): a for c, a in profile['axes'].items() if a['enabled']}
     if not enabled:
         print('no axes enabled in this profile')

@@ -335,7 +335,11 @@ tune_widescreen() {
     ini_set "$f" "AntiTrackStreamerCrash" "1"
     ini_set "$f" "AntiFEScriptCrash" "1"
     ini_set "$f" "DisablePunkBuster" "1"
-    [[ "$HW_PAD" -gt 0 ]] && ini_set "$f" "ImproveGamepadSupport" "1"
+    if [[ "$INPUT_MODE" == "wheel" ]]; then
+        ini_set "$f" "ImproveGamepadSupport" "0"
+    elif [[ "$HW_PAD" -gt 0 ]]; then
+        ini_set "$f" "ImproveGamepadSupport" "1"
+    fi
     local wm
     wm=$(grep -E "^[[:space:]]*WindowedMode[[:space:]]*=" "$f" 2>/dev/null | head -1 \
          | sed -E 's/^[^=]*=[[:space:]]*//' | grep -oE "^[0-9]+")
@@ -663,11 +667,11 @@ if pgrep -x steam >/dev/null 2>&1 && command -v zenity >/dev/null 2>&1; then
         --ok-label="Start anyway" --cancel-label="Cancel" 2>/dev/null || exit 0
 fi
 
-WHEEL_PROFILE="nfs-$id"
-if command -v flatpak >/dev/null 2>&1 \
+CHOOSER="$TOOLS_DIR/ofs_chooser.py"
+if [[ ! -f "\$CHOOSER" ]] && command -v flatpak >/dev/null 2>&1 \
    && flatpak info io.github.berarma.Oversteer >/dev/null 2>&1 \
    && ls /dev/input/by-id/ 2>/dev/null | grep -qiE "wheel|racing"; then
-    flatpak run io.github.berarma.Oversteer -p "\$WHEEL_PROFILE" >/dev/null 2>&1 || true
+    flatpak run io.github.berarma.Oversteer -p "nfs-$id" >/dev/null 2>&1 || true
     [[ -x "$GAMES_ROOT/nfs-wheel-setup.sh" ]] && "$GAMES_ROOT/nfs-wheel-setup.sh" 20 || true
 fi
 
@@ -681,7 +685,6 @@ mkdir -p "\$DXVK_STATE_CACHE_PATH" "\$__GL_SHADER_DISK_CACHE_PATH"
 
 cd "\$GAME_DIR"
 
-CHOOSER="$TOOLS_DIR/ofs_chooser.py"
 if [[ -f "\$CHOOSER" ]]; then
     exec python3 "\$CHOOSER" "$id" python3 "\$PROTON" run "\$TARGET" "\$@"
 fi
