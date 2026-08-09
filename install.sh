@@ -9,6 +9,7 @@ readonly GAMES_ROOT="$HOME/Games"
 readonly RUNNERS_DIR="$GAMES_ROOT/_runners"
 readonly STAGING_DIR="$GAMES_ROOT/_installers/nfs"
 readonly MODS_DIR="$GAMES_ROOT/_installers/nfs/mods"
+readonly TOOLS_DIR="$GAMES_ROOT/_tools"
 readonly XI_VERSION="1.22"
 readonly XI_BASE="https://github.com/xan1242/NFS-XtendedInput/releases/download/${XI_VERSION}"
 readonly WSFP_TAGS="https://api.github.com/repos/ThirteenAG/WidescreenFixesPack/releases/tags"
@@ -537,11 +538,18 @@ discovery() {
 }
 
 install_wheel_setup() {
-    local src
-    src="$(dirname "$(readlink -f "$0")")/wheel/nfs-wheel-setup.sh"
-    [[ -f "$src" ]] || return 0
-    cp "$src" "$GAMES_ROOT/nfs-wheel-setup.sh"
-    chmod +x "$GAMES_ROOT/nfs-wheel-setup.sh"
+    local base src
+    base="$(dirname "$(readlink -f "$0")")"
+    src="$base/wheel/nfs-wheel-setup.sh"
+    if [[ -f "$src" ]]; then
+        cp "$src" "$GAMES_ROOT/nfs-wheel-setup.sh"
+        chmod +x "$GAMES_ROOT/nfs-wheel-setup.sh"
+    fi
+    if [[ -d "$base/tools" ]]; then
+        mkdir -p "$TOOLS_DIR"
+        cp "$base"/tools/*.py "$TOOLS_DIR/" 2>/dev/null || true
+        chmod +x "$TOOLS_DIR"/*.py 2>/dev/null || true
+    fi
 }
 
 install_proton() {
@@ -672,6 +680,11 @@ export __GL_SHADER_DISK_CACHE_PATH="$pfx/nv_cache"
 mkdir -p "\$DXVK_STATE_CACHE_PATH" "\$__GL_SHADER_DISK_CACHE_PATH"
 
 cd "\$GAME_DIR"
+
+CHOOSER="$TOOLS_DIR/ofs_chooser.py"
+if [[ -f "\$CHOOSER" ]]; then
+    exec python3 "\$CHOOSER" "$id" python3 "\$PROTON" run "\$TARGET" "\$@"
+fi
 exec python3 "\$PROTON" run "\$TARGET" "\$@"
 EOF
     chmod +x "$path"

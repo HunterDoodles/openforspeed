@@ -411,6 +411,29 @@ It needs no root and no packages. `/dev/uinput` is already writable by your user
 
 Rotation range, force feedback and combined pedals still belong to Oversteer. The two work together: Oversteer sets up the hardware, this shapes what the game reads.
 
+### Picking your device when a game starts
+
+The launchers open a small menu first:
+
+```
+OpenForSpeed  prostreet
+----------------------------------------------
+ 1  Wheel    Logitech G29 Driving Force Racing
+ 2  Gamepad  not connected
+ 3  Keyboard no device setup
+
+ c  Calibrate the wheel first
+ f  Forget the saved choice for this game
+
+saved choice: wheel, starting in 5s
+```
+
+It remembers your pick per game, so after the first time it counts down and starts on its own. Press a number to change it, `c` to calibrate, `f` to forget. If an axis rests away from centre it says so right there, since that is the thing that makes menus scroll by themselves.
+
+Pick the wheel and it sets up the hardware, starts the bridge, launches the game, and shuts the bridge down when you quit.
+
+The menu opens in your terminal emulator. If you have none installed, or if you launch from a terminal already, it uses that instead. Games launched with no menu at all still work, the launcher falls through to starting the game directly.
+
 ## If something breaks
 
 **Game opens but looks like the mods are missing**
