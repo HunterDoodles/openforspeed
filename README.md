@@ -385,6 +385,32 @@ Height=1440
 
 About the gamepad: the game pops up "Your controller is not specifically recognized" and sends you to Controller Options. It does see the pad, it just has no profile for an Xbox controller because the game predates it. Map the buttons yourself in Controller Options, or use AntiMicroX like with NFS III.
 
+## The input tool
+
+Everything above configures the wheel through the driver, and that only goes so far. Some of these games read the raw axis values and ignore the deadzone the kernel reports, so a clutch pedal that rests at its maximum reads as a held menu direction no matter what you set. Switching the wheel into an older compatibility mode does silence that pedal, but the wheel then shows up as a different device and every binding you saved in game stops working.
+
+`tools/ofs_input.py` takes a different route. It reads the real wheel or pad, applies your settings, and publishes a second virtual device built from scratch. The game only ever sees that one.
+
+```bash
+python3 tools/ofs_input.py list
+python3 tools/ofs_input.py monitor
+python3 tools/ofs_input.py calibrate --profile wheel
+python3 tools/ofs_input.py bridge --profile wheel
+```
+
+`list` shows every device with its axes and flags any that rest away from centre, which is the thing that causes runaway menus. `monitor` draws live bars so you can see what each pedal actually does. `calibrate` walks you through each axis: keep it or drop it, invert it, set a deadzone. `bridge` then runs the virtual device.
+
+What this buys you:
+
+- **Drop an axis entirely.** The clutch never reaches the game, so it cannot hold a menu direction.
+- **Deadzones that work.** They are applied before the event is sent, so the game receives a value that is already clean instead of being asked to respect a hint.
+- **Inversion per axis**, for pedals wired the wrong way round.
+- **A stable device identity.** The virtual device always has the same name, so your in-game bindings survive replugs, mode changes and the PS3/PS4 switch. This is the part that matters most. Changing the wheel mode to fix the clutch cost a full remap once.
+
+It needs no root and no packages. `/dev/uinput` is already writable by your user on most desktops, and everything is standard library, which also means it works on Bazzite and SteamOS where you cannot install Python packages system wide.
+
+Rotation range, force feedback and combined pedals still belong to Oversteer. The two work together: Oversteer sets up the hardware, this shapes what the game reads.
+
 ## If something breaks
 
 **Game opens but looks like the mods are missing**
