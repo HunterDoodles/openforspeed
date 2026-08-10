@@ -26,11 +26,17 @@ TUNE_ONLY=0
 NO_TUNE=0
 INPUT_MODE="gamepad"
 SELECTED=()
+FAILED_GAMES=()
+INPUT_MODE_SET=0
+readonly STATE_FILE="$HOME/.config/openforspeed/install-state"
 
 HW_RES_X=1920
 HW_RES_Y=1080
 HW_GPU_VENDOR="0x10DE"
 HW_GPU_NAME="unknown"
+HW_GPU_DISCRETE=0
+HW_GPU_HYBRID=0
+HW_RES_DETECTED=0
 HW_VRAM_MB=0
 HW_THREADS=1
 HW_PAD=0
@@ -144,11 +150,26 @@ parse_args() {
             --check)  CHECK_ONLY=1; shift ;;
             --tune-only) TUNE_ONLY=1; shift ;;
             --no-tune)   NO_TUNE=1; shift ;;
-            --input)     INPUT_MODE="${2:-gamepad}"; shift 2 ;;
+            --input)     INPUT_MODE="${2:-gamepad}"; INPUT_MODE_SET=1; shift 2 ;;
             --help|-h) usage; exit 0 ;;
             *) die "Unknown option: $1 (try --help)" ;;
         esac
     done
+}
+
+remember_input_mode() {
+    mkdir -p "$(dirname "$STATE_FILE")"
+    printf 'input_mode=%s\n' "$INPUT_MODE" > "$STATE_FILE"
+}
+
+restore_input_mode() {
+    [[ "$INPUT_MODE_SET" -eq 1 ]] && return 0
+    [[ -r "$STATE_FILE" ]] || return 0
+    local saved
+    saved=$(grep -oE '^input_mode=.*' "$STATE_FILE" | cut -d= -f2)
+    case "$saved" in
+        wheel|gamepad) INPUT_MODE="$saved" ;;
+    esac
 }
 
 detect_distro() {
@@ -239,20 +260,48 @@ detect_resolution() {
     if [[ -z "$geom" ]] && command -v wlr-randr >/dev/null 2>&1; then
         geom=$(wlr-randr 2>/dev/null | grep -oE "[0-9]+x[0-9]+" | head -1)
     fi
+    if [[ -z "$geom" ]]; then
+        local modes connector
+        for modes in /sys/class/drm/*/modes; do
+            connector="${modes%/modes}"
+            [[ "$(cat "$connector/status" 2>/dev/null)" == "connected" ]] || continue
+            geom=$(head -1 "$modes" 2>/dev/null)
+            [[ -n "$geom" ]] && break
+        done
+    fi
     [[ -n "$geom" ]] || return 1
     HW_RES_X="${geom%x*}"
     HW_RES_Y="${geom#*x}"
+    HW_RES_DETECTED=1
 }
 
 detect_gpu() {
-    local id
-    id=$(lspci -nn 2>/dev/null | grep -iE "vga|3d|display" | grep -oE "\[[0-9a-f]{4}:[0-9a-f]{4}\]" | head -1)
-    HW_GPU_NAME=$(lspci 2>/dev/null | grep -iE "vga|3d|display" | head -1 | sed 's/.*: //')
-    case "$id" in
-        \[10de:*) HW_GPU_VENDOR="0x10DE" ;;
-        \[1002:*) HW_GPU_VENDOR="0x1002" ;;
-        \[8086:*) HW_GPU_VENDOR="0x8086" ;;
-    esac
+    local line id
+    HW_GPU_HYBRID=0
+    while IFS= read -r line; do
+        id=$(printf '%s' "$line" | grep -oE "\[[0-9a-f]{4}:[0-9a-f]{4}\]" | head -1)
+        case "$id" in
+            \[10de:*)
+                HW_GPU_VENDOR="0x10DE"
+                HW_GPU_NAME=$(printf '%s' "$line" | sed 's/.*: //')
+                HW_GPU_DISCRETE=1 ;;
+            \[1002:*)
+                if [[ "$HW_GPU_DISCRETE" -eq 0 ]]; then
+                    HW_GPU_VENDOR="0x1002"
+                    HW_GPU_NAME=$(printf '%s' "$line" | sed 's/.*: //')
+                    HW_GPU_DISCRETE=1
+                fi ;;
+            \[8086:*)
+                if [[ "$HW_GPU_DISCRETE" -eq 0 ]]; then
+                    HW_GPU_VENDOR="0x8086"
+                    HW_GPU_NAME=$(printf '%s' "$line" | sed 's/.*: //')
+                fi ;;
+        esac
+    done < <(lspci -nn 2>/dev/null | grep -iE "vga|3d|display")
+    local count
+    count=$(lspci 2>/dev/null | grep -icE "vga|3d compatible" )
+    [[ "$HW_GPU_DISCRETE" -eq 1 ]] && [[ "$count" -gt 1 ]] && HW_GPU_HYBRID=1
+    return 0
 }
 
 detect_vram() {
@@ -277,7 +326,8 @@ detect_hardware() {
     detect_gpu
     detect_vram
     HW_THREADS=$(nproc 2>/dev/null || printf '1')
-    HW_PAD=$(ls /dev/input/js* 2>/dev/null | wc -l)
+    HW_PAD=0
+    for _pad in /dev/input/js*; do [[ -e "$_pad" ]] && HW_PAD=$((HW_PAD + 1)); done
     if   [[ "$HW_VRAM_MB" -ge 6000 ]]; then HW_TIER="high"
     elif [[ "$HW_VRAM_MB" -ge 2000 ]]; then HW_TIER="medium"
     elif [[ "$HW_VRAM_MB" -gt 0    ]]; then HW_TIER="low"
@@ -285,8 +335,15 @@ detect_hardware() {
 }
 
 report_hardware() {
-    ok "display: ${HW_RES_X}x${HW_RES_Y}"
+    if [[ "$HW_RES_DETECTED" -eq 1 ]]; then
+        ok "display: ${HW_RES_X}x${HW_RES_Y}"
+    else
+        warn "no display detected, assuming ${HW_RES_X}x${HW_RES_Y}. Run --tune-only from the desktop to fix it"
+    fi
     ok "GPU: $HW_GPU_NAME (vendor $HW_GPU_VENDOR)"
+    if [[ "$HW_GPU_HYBRID" -eq 1 ]]; then
+        ok "hybrid graphics, launchers will force the discrete card"
+    fi
     if [[ "$HW_VRAM_MB" -gt 0 ]]; then ok "VRAM: ${HW_VRAM_MB} MB, quality preset: $HW_TIER"
     else warn "could not read VRAM, using the $HW_TIER preset"; fi
     [[ "$HW_PAD" -gt 0 ]] && ok "gamepad detected, controller icons will be enabled" \
@@ -532,6 +589,12 @@ discovery() {
     check_proton
     detect_hardware
     report_hardware
+    restore_input_mode
+    if [[ "$INPUT_MODE_SET" -eq 1 ]]; then
+        ok "input mode: $INPUT_MODE"
+    else
+        ok "input mode: $INPUT_MODE (remembered, change it with --input)"
+    fi
     if [[ "$TUNE_ONLY" -eq 0 ]]; then
         check_disk_space || failed=1
         check_sources || failed=1
@@ -594,6 +657,29 @@ unpack_zip() {
     unzip -o -q "$zip" -d "$dest"
 }
 
+needs_display() {
+    [[ -n "${DISPLAY:-}" || -n "${WAYLAND_DISPLAY:-}" ]] && return 0
+    fail "$GAME_LABEL needs a graphical session to install"
+    log "      Its installer draws a window and cannot run over ssh or a plain tty."
+    log "      Log in to the desktop on this machine and run the same command there."
+    return 1
+}
+
+install_advinst() {
+    local id="$1" zip="$2" pfx="$3"
+    local stage="$STAGING_DIR/$id"
+    info "Unpacking $GAME_LABEL"
+    unpack_zip "$zip" "$stage"
+    local setup
+    setup=$(find "$stage" -maxdepth 2 -iname "*.exe" ! -iname "unins*" | head -1)
+    [[ -n "$setup" ]] || die "No installer inside $zip"
+    needs_display || return 1
+    info "Installing $GAME_LABEL, a window will open and close on its own"
+    proton_env "$pfx"
+    ( cd "$(dirname "$setup")" && python3 "$PROTON_BIN" run "$setup" \
+        /exenoui /qn "APPDIR=C:\\Games\\$GAME_DIRNAME" ) >/dev/null 2>&1 || true
+}
+
 install_magipack() {
     local id="$1" zip="$2" pfx="$3"
     local stage="$STAGING_DIR/$id"
@@ -650,6 +736,12 @@ detect_exe() {
 write_launcher() {
     local id="$1" pfx="$2" dir="$3" exe="$4" overrides="$5" label="$6"
     local path="$GAMES_ROOT/nfs-$id-play.sh"
+    local prime_block=""
+    if [[ "$HW_GPU_HYBRID" -eq 1 ]] && [[ "$HW_GPU_VENDOR" == "0x10DE" ]]; then
+        prime_block=$'export __NV_PRIME_RENDER_OFFLOAD=1\nexport __GLX_VENDOR_LIBRARY_NAME=nvidia\nexport __VK_LAYER_NV_optimus=NVIDIA_only'
+    elif [[ "$HW_GPU_HYBRID" -eq 1 ]]; then
+        prime_block=$'export DRI_PRIME=1'
+    fi
     cat > "$path" <<EOF
 #!/usr/bin/env bash
 set -uo pipefail
@@ -678,6 +770,7 @@ fi
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT"
 export STEAM_COMPAT_DATA_PATH="$pfx"
 export WINEDLLOVERRIDES="${overrides:+$overrides;}lsteamclient=d"
+${prime_block}
 export DXVK_STATE_CACHE_PATH="$pfx/dxvk_cache"
 export __GL_SHADER_DISK_CACHE=1
 export __GL_SHADER_DISK_CACHE_PATH="$pfx/nv_cache"
@@ -722,7 +815,6 @@ Icon=$icon
 Terminal=false
 Categories=Game;ArcadeGame;
 StartupNotify=true
-StartupWMClass=steam_proton
 EOF
     chmod +x "$file"
     local desktop_dir
@@ -764,7 +856,8 @@ install_game() {
     else
         create_prefix "$pfx"
         case "$GAME_KIND" in
-            magipack|advinst) install_magipack "$id" "$zip" "$pfx" ;;
+            magipack) install_magipack "$id" "$zip" "$pfx" ;;
+            advinst)  install_advinst "$id" "$zip" "$pfx" || return 0 ;;
             isorepack) install_isorepack "$id" "$zip" "$pfx" ;;
             bundle7z) install_bundle7z "$id" "$zip" "$pfx" ;;
         esac
@@ -775,7 +868,12 @@ install_game() {
     tune_game "$dir"
 
     local exe; exe=$(detect_exe "$dir")
-    [[ -n "$exe" ]] || { fail "$GAME_LABEL: no executable found in $dir"; return 0; }
+    if [[ -z "$exe" ]]; then
+        fail "$GAME_LABEL did not install, no executable in $dir"
+        log "      Check the installer window for an error, then run this game again."
+        FAILED_GAMES+=("$GAME_LABEL")
+        return 0
+    fi
 
     local launcher icon
     launcher=$(write_launcher "$id" "$pfx" "$dir" "$exe" "$GAME_OVERRIDES" "$GAME_LABEL")
@@ -793,6 +891,10 @@ summary() {
         local p="$GAMES_ROOT/nfs-$id-play.sh"
         [[ -x "$p" ]] && log "  $GAME_LABEL"$'\n'"    $p"
     done
+    if [[ ${#FAILED_GAMES[@]} -gt 0 ]]; then
+        log ""
+        printf '  %sdid not install:%s %s\n' "$C_RED$C_BOLD" "$C_RESET" "$(IFS=', '; echo "${FAILED_GAMES[*]}")"
+    fi
     log ""
     log "  Shortcuts were added to your desktop and application menu."
     log "  Close Steam before playing or it will grab your controller."
@@ -807,6 +909,7 @@ main() {
     [[ "$CHECK_ONLY" -eq 1 ]] && exit 0
     mkdir -p "$GAMES_ROOT"
     install_wheel_setup
+    remember_input_mode
     [[ "$TUNE_ONLY" -eq 1 ]] || install_proton
     local id
     for id in "${SELECTED[@]}"; do install_game "$id"; done
