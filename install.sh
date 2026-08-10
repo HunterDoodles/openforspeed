@@ -641,6 +641,17 @@ proton_env() {
     export WINEDLLOVERRIDES="lsteamclient=d"
 }
 
+ensure_cdrom_drive() {
+    local pfx="$1" dir="$2"
+    local dosdevices="$pfx/pfx/dosdevices"
+    [[ -d "$dosdevices" && -d "$dir" ]] || return 0
+    [[ -e "$dosdevices/d:" ]] && return 0
+    ln -sfn "$dir" "$dosdevices/d:"
+    proton_env "$pfx"
+    python3 "$PROTON_BIN" run reg.exe add 'HKLM\Software\Wine\Drives' \
+        /v 'd:' /t REG_SZ /d cdrom /f >/dev/null 2>&1 || true
+}
+
 create_prefix() {
     local pfx="$1"
     mkdir -p "$pfx"
@@ -836,6 +847,7 @@ install_game() {
         [[ -n "$(ls -A "$dir" 2>/dev/null)" ]] || return 0
         [[ "$id" == "prostreet" ]] && install_prostreet_fix "$dir"
         install_xtendedinput "$id" "$dir"
+        ensure_cdrom_drive "$pfx" "$dir"
         tune_game "$dir"
         local rexe; rexe=$(detect_exe "$dir")
         if [[ -n "$rexe" ]]; then
@@ -865,6 +877,7 @@ install_game() {
 
     [[ "$id" == "prostreet" ]] && install_prostreet_fix "$dir"
     install_xtendedinput "$id" "$dir"
+    ensure_cdrom_drive "$pfx" "$dir"
     tune_game "$dir"
 
     local exe; exe=$(detect_exe "$dir")
