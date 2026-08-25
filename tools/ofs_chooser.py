@@ -5,6 +5,7 @@ import json
 import os
 import select
 import shutil
+import signal
 import subprocess
 import sys
 import termios
@@ -166,8 +167,16 @@ def read_key(timeout=None):
 
 
 def run_calibration(kind):
-    subprocess.call([sys.executable, os.path.join(HERE, 'ofs_input.py'),
-                     'calibrate', '--device', kind, '--profile', kind])
+    # The original launcher had an issue with the CTRL+C input to complete calibration
+    # That would result in an instant calibration cancel. This helps fix that.
+    old_handler = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        return subprocess.call(
+            [sys.executable, os.path.join(HERE, 'ofs_input.py'),
+             'calibrate', '--device', kind, '--profile', kind],
+            preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
+    finally:
+        signal.signal(signal.SIGINT, old_handler)
 
 
 def delete_profile(kind):
@@ -223,14 +232,20 @@ def choose(game):
                 print()
                 print('  %s has no profile yet, calibrating first' % mode)
                 time.sleep(1.2)
-                run_calibration(mode)
+                rc = run_calibration(mode)
+                if rc != 0 or not ofs.load_profile(mode):
+                    message = '%scalibration cancelled%s' % (YELLOW, RESET)
+                    continue
             save_choice(game, mode)
             return mode
         if key == 'c':
             kind = ask_kind('calibrate which device?')
             if kind:
-                run_calibration(kind)
-                message = '%s%s profile saved%s' % (GREEN, kind, RESET)
+                rc = run_calibration(kind)
+                if rc == 0:
+                    message = '%s%s profile saved%s' % (GREEN, kind, RESET)
+                else:
+                    message = '%scalibration cancelled%s' % (YELLOW, RESET)
         elif key == 'd':
             kind = ask_kind('delete which profile?')
             if kind:
@@ -274,7 +289,11 @@ def main():
                                        os.path.abspath(__file__)] + sys.argv[1:])
         os.execvp(command[0], command)
 
-    mode = choose(game)
+    try:
+        mode = choose(game)
+    except KeyboardInterrupt:
+        print()
+        return 130
     if mode is None:
         return 0
 
@@ -290,6 +309,8 @@ def main():
     print()
     try:
         subprocess.call(command)
+    except KeyboardInterrupt:
+        pass
     finally:
         if bridge:
             bridge.terminate()

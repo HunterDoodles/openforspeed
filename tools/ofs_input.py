@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """OpenForSpeed input tool. Standard library only, no root needed."""
 
+# The original version of this project by agentkyo has been vibe coded out the ass. 
+# I want to restructure it from scratch, but it would take a ton of effort.
+# So for now I decided to fork the project so that I would know from
+# henceforth the project will have human-authored code in it.
+
 import argparse
 import ctypes
 import fcntl
@@ -58,6 +63,88 @@ ROLE_HINTS = {
     'X': 'steering', 'Y': 'pedal', 'Z': 'pedal', 'RZ': 'pedal',
     'RX': 'pedal', 'RY': 'pedal', 'HAT0X': 'dpad', 'HAT0Y': 'dpad',
 }
+
+
+# The original version of Open for Speed didn't list any of the
+# various axis-based inputs by their name. 
+# I implemented this system to fix that.
+AXIS_LABELS = {
+    'X': 'Left Stick X (left/right)',
+    'Y': 'Left Stick Y (up/down)',
+    'Z': 'Left Trigger (L2 / LT)',
+    'RX': 'Right Stick X (left/right)',
+    'RY': 'Right Stick Y (up/down)',
+    'RZ': 'Right Trigger (R2 / RT)',
+    'THROTTLE': 'Throttle',
+    'RUDDER': 'Rudder',
+    'WHEEL': 'Steering Wheel',
+    'GAS': 'Gas Pedal',
+    'BRAKE': 'Brake Pedal',
+    'HAT0X': 'D-Pad X (right=1, left=-1)',
+    'HAT0Y': 'D-Pad Y (down=1, up=-1)',
+}
+
+
+def axis_label(short_name):
+    return AXIS_LABELS.get(short_name, short_name)
+
+
+# Same as for the above, but for buttons!
+BUTTON_LABELS = {
+    0x130: 'South (Cross / A)',
+    0x131: 'East (Circle / B)',
+    0x132: 'C',
+    0x133: 'North (Triangle / Y)',
+    0x134: 'West (Square / X)',
+    0x135: 'Z',
+    0x136: 'L1 / LB',
+    0x137: 'R1 / RB',
+    0x138: 'L2 / LT',
+    0x139: 'R2 / RT',
+    0x13a: 'Select (Create / Back)',
+    0x13b: 'Start (Options / Start)',
+    0x13c: 'Mode (PS / Guide)',
+    0x13d: 'L3 (left stick click)',
+    0x13e: 'R3 (right stick click)',
+    0x220: 'D-Pad Up',
+    0x221: 'D-Pad Down',
+    0x222: 'D-Pad Left',
+    0x223: 'D-Pad Right',
+}
+
+
+def button_label(code):
+    return BUTTON_LABELS.get(code, 'button %d' % code)
+
+
+# I had an issue getting the program to work with my controller
+# due to it detecting my various graphics tablets (The kind for
+# making art / drawing). So, I implemented a check for various
+# graphics tablets and their accessories. I probably missed some,
+# But they should be easy enough to add additional ones. As an
+# added bonus, it's really easy to ignore any device at all
+# just by adding the name to TABLET_NAME_HINTS so I might just
+# restructure this to be for unwanted devices in general.
+ABS_PRESSURE, ABS_TILT_X, ABS_TILT_Y = 0x18, 0x1a, 0x1b
+TABLET_ABS_CODES = {ABS_PRESSURE, ABS_TILT_X, ABS_TILT_Y}
+BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOOL_BRUSH = 0x140, 0x141, 0x142
+BTN_TOOL_PENCIL, BTN_TOOL_AIRBRUSH = 0x143, 0x144
+BTN_TOUCH, BTN_STYLUS, BTN_STYLUS2 = 0x14a, 0x14b, 0x14c
+TABLET_KEY_CODES = {BTN_TOOL_PEN, BTN_TOOL_RUBBER, BTN_TOOL_BRUSH,
+                     BTN_TOOL_PENCIL, BTN_TOOL_AIRBRUSH, BTN_TOUCH,
+                     BTN_STYLUS, BTN_STYLUS2}
+TABLET_NAME_HINTS = ('huion', 'wacom', 'xp-pen', 'xppen', 'gaomon',
+                     'veikk', 'ugee', 'tablet', 'pen display', 'pen tablet')
+
+
+def looks_like_tablet(name, axes, buttons):
+    if any(hint in name.lower() for hint in TABLET_NAME_HINTS):
+        return True
+    if TABLET_ABS_CODES & set(axes):
+        return True
+    if TABLET_KEY_CODES & set(buttons):
+        return True
+    return False
 
 
 class AbsInfo(ctypes.Structure):
@@ -168,7 +255,7 @@ def list_devices():
         axes = supported_codes(fd, EV_ABS, 0x40)
         buttons = supported_codes(fd, EV_KEY, 0x300)
         os.close(fd)
-        if axes and buttons:
+        if axes and buttons and not looks_like_tablet(name, axes, buttons):
             found.append({'path': path, 'name': name,
                           'axes': axes, 'buttons': buttons})
     return found
@@ -299,10 +386,11 @@ def monitor(dev, profile, seconds=None):
                 out = apply_axis(axis, raw)
                 state = 'ON ' if axis['enabled'] else 'off'
                 flag = 'INV' if axis['invert'] else '   '
-                print('  %-8s %s %s [%s] raw=%-6d out=%+.2f\033[K'
-                      % (axis['name'], state, flag, bar(out, -1.0, 1.0), raw, out))
+                print('  %-8s %-28s %s %s [%s] raw=%-6d out=%+.2f\033[K'
+                      % (axis['name'], axis_label(axis['name']), state, flag,
+                         bar(out, -1.0, 1.0), raw, out))
                 lines_drawn += 1
-            btns = ' '.join(str(b) for b in sorted(pressed)) or '-'
+            btns = ', '.join(button_label(b) for b in sorted(pressed)) or '-'
             print('  buttons: %s\033[K' % btns)
             lines_drawn += 1
             sys.stdout.flush()
@@ -355,7 +443,7 @@ def capture_button(dev, prompt, timeout=10):
                 result = code
                 break
     os.close(fd)
-    print('button %s' % result if result is not None else 'skipped')
+    print(button_label(result) if result is not None else 'skipped')
     return result
 
 
@@ -570,11 +658,15 @@ def cmd_list(args):
             centre = (info.minimum + info.maximum) / 2
             off = abs(info.value - centre) / span
             warn = '  <- rests off centre' if off > 0.4 else ''
-            print('    %-8s %6d  (%d..%d)%s'
-                  % (AXIS_NAMES.get(code, code), info.value,
-                     info.minimum, info.maximum, warn))
+            name = AXIS_NAMES.get(code, code)
+            print('    %-8s %-28s %6d  (%d..%d)%s'
+                  % (name, axis_label(name) if isinstance(name, str) else '',
+                     info.value, info.minimum, info.maximum, warn))
         os.close(fd)
-        print('    %d buttons' % len(dev['buttons']))
+        btn_names = [button_label(c) for c in sorted(dev['buttons'])
+                     if c in BUTTON_LABELS]
+        print('    %d buttons%s' % (len(dev['buttons']),
+              ': ' + ', '.join(btn_names) if btn_names else ''))
 
 
 def cmd_calibrate(args):
@@ -590,7 +682,7 @@ def cmd_calibrate(args):
     print()
     monitor(dev, profile)
     for code_str, axis in sorted(profile['axes'].items(), key=lambda kv: int(kv[0])):
-        print('%s (%s)' % (axis['name'], axis['role']))
+        print('%s — %s (%s)' % (axis['name'], axis_label(axis['name']), axis['role']))
         ans = input('  enable? [Y/n] ').strip().lower()
         axis['enabled'] = ans != 'n'
         if not axis['enabled']:
@@ -657,7 +749,11 @@ def main():
     if not getattr(args, 'func', None):
         parser.print_help()
         return 0
-    return args.func(args)
+    try:
+        return args.func(args)
+    except KeyboardInterrupt
+        print('\ncancelled, nothing was saved')
+        return 130
 
 
 if __name__ == '__main__':

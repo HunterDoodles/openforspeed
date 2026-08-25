@@ -2,8 +2,8 @@
 set -euo pipefail
 
 readonly SCRIPT_NAME="OpenForSpeed"
-readonly GE_PROTON_VERSION="GE-Proton11-3"
-readonly GE_PROTON_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_VERSION}/${GE_PROTON_VERSION}.tar.gz"
+readonly GE_PROTON_VERSION="GE-Proton11-5"
+readonly GE_PROTON_URL="https://github.com/GloriousEggroll/proton-ge-custom/releases/download/${GE_PROTON_VERSION}/${GE_PROTON_VERSION}-x86_64.tar.gz"
 
 readonly GAMES_ROOT="$HOME/Games/OFS"
 readonly RUNNERS_DIR="$GAMES_ROOT/_runners"
@@ -624,10 +624,10 @@ install_proton() {
     info "Installing $GE_PROTON_VERSION"
     local target="$STEAM_ROOT/compatibilitytools.d"
     mkdir -p "$target" "$RUNNERS_DIR"
-    local archive="$RUNNERS_DIR/${GE_PROTON_VERSION}.tar.gz"
+    local archive="$RUNNERS_DIR/${GE_PROTON_VERSION}-x86_64.tar.gz"
     [[ -f "$archive" ]] || curl -L --progress-bar -o "$archive" "$GE_PROTON_URL"
     tar -xf "$archive" -C "$target"
-    PROTON_BIN="$target/$GE_PROTON_VERSION/proton"
+    PROTON_BIN="$target/$GE_PROTON_VERSION-x86_64/proton"
     [[ -x "$PROTON_BIN" ]] || die "Proton did not unpack correctly"
     ok "$GE_PROTON_VERSION ready"
 }

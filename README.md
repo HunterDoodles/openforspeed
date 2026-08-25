@@ -1,10 +1,10 @@
 # OpenForSpeed
 
+**Note, the original project by agentkyo was created by AI, and as of writing this project still has a lot of that code. However, I am working on restructuring the code myself to remove it.**
+
 **Play the classic Need for Speed games on Linux.** Eight of them, widescreen fixes and graphics mods already wired up, gamepad and racing wheel working, one script and no sudo.
 
 > Underground · Underground 2 · Most Wanted · Carbon · ProStreet · Undercover · NFS III Hot Pursuit · Hot Pursuit 2
-
-**Read this in other languages:** [Português do Brasil](README.pt-BR.md) · [Español](README.es.md)
 
 Tested on Ubuntu based and Fedora based systems, and built so it also works on **Bazzite, SteamOS and the Steam Deck**, where you cannot install anything system wide. Everything lands in your home folder.
 
