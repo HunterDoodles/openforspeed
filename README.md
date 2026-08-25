@@ -29,7 +29,7 @@ If it helps you get one of them running, a star makes it easier for the next per
 
 Plays means somebody actually drove a race with a controller. Runs means it boots and renders but has not had a full session yet. If you get further with any of them, or get ProStreet going, open an issue and say how.
 
-Tested on this machine:
+Tested on this machine (agentkyo):
 
 | | |
 |---|---|
@@ -86,6 +86,15 @@ cd openforspeed
 ./install.sh --list
 ./install.sh --source ~/Downloads --game most-wanted
 ```
+## Install with newer Proton-GE
+```bash
+./install_newge.sh --list
+./install_newge.sh --source ~/Downloads --game most-wanted
+```
+install_newge.sh is a modified script that just pulls the latest (at time of writing) version of Proton-GE to install the games instead.
+After testing it works great, and I've encountered no issues. However, of course, your experience may vary.
+
+You can use ANY command you'd use with install.sh with install_newge.sh, since it's essentially the same file with minor tweaks.
 
 Install several at once:
 
@@ -496,97 +505,10 @@ for gamepads. Wheels need it disabled.
 save files. There is no text file to edit and no safe way to write them from
 outside, so those are mapped in game and left alone.
 
-This is why the tool works on the device instead of the game files. Shaping what
-the game receives is the only approach that works the same way everywhere.
-
-## If something breaks
-
-**The game asks you to insert a disc**
-
-There is no optical drive in the prefix. Some of these games still probe for one and refuse to start when they find nothing, even with the no-CD fix in place.
-
-The install script maps a `D:` drive pointing at the game folder and marks it as a CD-ROM. If you set a prefix up by hand:
-
-```bash
-ln -sfn "$PFX/drive_c/Games/NFSU2" "$PFX/dosdevices/d:"
-WINEPREFIX="$PFX" proton run reg.exe add 'HKLM\Software\Wine\Drives' \
-    /v 'd:' /t REG_SZ /d cdrom /f
-```
-
-This one cost a whole evening because it only showed up on the second machine. A prefix created while a USB stick is mounted picks up extra drive letters by accident, so the game finds a drive and never complains. Create the same prefix on a clean machine and you get `c:` and `z:` only, and the disc prompt appears. Same game, same files, same registry, different result. If something works on one box and not another, diff `dosdevices` before you diff anything else.
-
-**Every shortcut shows the same game's name and icon**
-
-Do not put `StartupWMClass=steam_proton` in the desktop entries. Every Proton game opens a window with that class, so the desktop picks whichever entry claims it first, alphabetically, and labels all your games with that one. Leave the key out and each window keeps its own identity.
-
-**The installer stops right after the Proton check and prints nothing**
-
-Two lines of hardware detection under `set -euo pipefail` will do that. Counting gamepads with `ls /dev/input/js* | wc -l` fails when no controller is plugged in, and `pipefail` turns that into a script exit. So does a bare `[[ test ]] && echo`, which returns 1 when the test is false. Neither prints anything, so it reads like the script finished.
-
-Loop over the glob instead of piping `ls`, and give every bare test an `else` branch.
-
-**Wrong resolution when you run the script over SSH**
-
-`xrandr` and `wlr-randr` need a display server. Over SSH there is none, and a script that falls back to a hardcoded default will happily write 1080p into every config file.
-
-Read the connector straight from the kernel, which works with no session at all:
-
-```bash
-for m in /sys/class/drm/*/modes; do
-    [ "$(cat "${m%/modes}/status")" = connected ] && head -1 "$m"
-done
-```
-
-**A test script you interrupted keeps a game broken**
-
-If a script that moves files around gets killed halfway, it can leave the game in a state you will not recognize later. One that had moved the `.asi` plugins aside stayed alive for forty minutes, so the no-CD fix was missing and the game demanded a disc, while the folder looked fine by the time anyone checked.
-
-Before debugging anything, run `ps -eo pid,etime,args | grep -i '\.exe'` and kill what is older than your session. Look for a stray `explorer.exe /desktop` too, since a leftover Wine desktop window is a black rectangle over your screen.
-
-**A glob missed a file that is obviously there**
-
-Shell globs are case sensitive. `ls *.exe` does not match `SPEED2.EXE`. Use `find . -iname '*.exe'` when you do not control the capitalization, which with these games you never do.
-
-**Game opens but looks like the mods are missing**
-
-Your `dinput8` override is not applied. See above.
-
-**Game window is black in a screenshot but fine on screen**
-
-That is a screenshot problem, not a game problem. `import -window <id>` cannot read a Vulkan surface and gives you a black image. Capture the whole screen and crop instead:
-
-```bash
-import -window root shot.png
-```
-
-**Moved the game folder and the uninstaller broke**
-
-The Inno Setup installers write the install path into the registry. If you move the folder you have to update those keys too.
-
-Read the registry with the prefix shut down, otherwise you get stale results. Wine keeps the registry in memory and only writes `system.reg` and `user.reg` now and then, so grepping those files while the game or the installer is running can show you nothing when there is plenty there. Kill `wineserver` first.
-
-**A `pkill -f` command killed your own terminal**
-
-`pkill -f` matches the full command line, including the shell that is running your script. Use `pkill -x` with the exact process name.
-
-**Doing it by hand and the silent install returns 1**
-
-Use `/VERYSILENT`, not `/SILENT`. This is the full line that works:
-
-```bash
-proton run Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=C:\\Games\\NFSMW"
-```
-
-`/SILENT` still draws a progress window and it did not survive being started from a script here. `/VERYSILENT` draws nothing and exits 0. Add `/LOG=C:\inno.log` if you want to see what it did, the log lands inside the prefix and lists every file.
-
-**Each game has a different executable name**
-
-`speed.exe`, `SPEED2.EXE`, `Speed.exe`, and so on, with different capitalization too. The script finds the biggest `.exe` in the game folder instead of keeping a list, which is why it works on games nobody has tested yet. Worth knowing if you write your own launcher.
-
 ## Where everything goes
 
 ```
-~/Games/
+~/Games/OFS/
 ├── nfs-most-wanted/           prefix, game in pfx/drive_c/Games/NFSMW
 ├── nfs-underground-2/         prefix, game in pfx/drive_c/Games/NFSU2
 ├── nfs-most-wanted-play.sh    launcher
@@ -594,15 +516,9 @@ proton run Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=C:\\Games\\N
 └── _installers/nfs/           unpacked archives
 ```
 
-`_installers/nfs` keeps the unpacked archives so a reinstall does not have to read your USB drive again. It adds up fast, around 8 GB for four games. Delete it whenever you want, nothing depends on it once the games are installed:
+`_installers/nfs` keeps the unpacked archives so a reinstall does not have to read from the original downloaded zips again. It adds up fast. You can delete it whenever you want, nothing depends on it once the games are installed:
 
-```bash
-rm -rf ~/Games/_installers/nfs
-```
-
-One prefix per game on purpose. These are old games with mods that hook into system DLLs, and keeping them apart means a broken mod in one cannot take down another.
-
-To remove a game, delete its prefix folder, its launcher and the two `.desktop` files.
+To unintsall a game, simply delete its prefix folder, its launcher and the two `.desktop` files.
 
 ## Credits
 
@@ -616,8 +532,9 @@ To remove a game, delete its prefix folder, its launcher and the two `.desktop` 
 
 **Bladez1992 and Legacy Gamers' Union** for the Hot Pursuit 2 repack, and **[xan1242](https://github.com/xan1242/hp2wsfix)** for hp2wsfix.
 
-I only worked out the Linux side and wrote it down.
+**[agentkyo](https://github.com/agentkyo)** for the original version of this project.
 
 ## Contributing
 
 Got one of the untested games running? Or Hot Pursuit 2? Open an issue with your distro, GPU and what you changed. Reports from Bazzite and Steam Deck are especially welcome.
+
