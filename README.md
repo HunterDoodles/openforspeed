@@ -86,6 +86,15 @@ cd openforspeed
 ./install.sh --list
 ./install.sh --source ~/Downloads --game most-wanted
 ```
+## Install with newer Proton-GE
+```bash
+./install_newge.sh --list
+./install_newge.sh --source ~/Downloads --game most-wanted
+```
+install_newge.sh is a modified script that just pulls the latest (at time of writing) version of Proton-GE to install the games instead.
+After testing it works great, and I've encountered no issues. However, of course, your experience may vary.
+
+You can use ANY command you'd use with install.sh with install_newge.sh, since it's essentially the same file with minor tweaks.
 
 Install several at once:
 
